@@ -227,6 +227,30 @@ export function mapSessionToClaudeLines(
       continue;
     }
 
+    // Claude's own compaction marker. When loading a transcript, Claude keeps
+    // only what follows the last `compact_boundary`, so the full history can
+    // stay on disk without being replayed into the context window.
+    if (type === "__compact_boundary__") {
+      flushAssistant();
+      const uuid = randomUUID();
+      lines.push({
+        parentUuid,
+        isSidechain: false,
+        userType: "external",
+        cwd: session.cwd,
+        sessionId: session.sessionId,
+        version,
+        type: "system",
+        subtype: "compact_boundary",
+        compactMetadata: {},
+        message: { role: "user", content: [] },
+        uuid,
+        timestamp: isoOf(tsMs),
+      } as ClaudeTranscriptLine);
+      parentUuid = uuid;
+      continue;
+    }
+
     // Marks where Codex compacted: everything before it was replaced by the
     // summary Codex carried forward. That summary is encrypted in the rollout,
     // so only the boundary can be represented.

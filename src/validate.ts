@@ -22,6 +22,7 @@ export function validateTranscript(lines: ClaudeTranscriptLine[]): ValidationIss
   let pending: string[] = [];
 
   lines.forEach((line, i) => {
+    if (line.type === "system") return; // structural marker, no content
     const blocks = blocksOf(line);
     const at = i + 1;
 
@@ -92,7 +93,7 @@ export function validateTranscript(lines: ClaudeTranscriptLine[]): ValidationIss
     });
   }
 
-  if (lines.length > 0 && lines[0].type !== "user") {
+  if (lines.length > 0 && lines[0].type === "assistant") {
     issues.push({ line: 1, kind: "leading-assistant", detail: "transcript must start with a user message" });
   }
 

@@ -308,7 +308,7 @@ test("Codex's own compacted context is used instead of the full history", () => 
   const compacted = loadCodexSessions(dir, { useCodexCompaction: true })[0];
   const full = loadCodexSessions(dir, { useCodexCompaction: false })[0];
 
-  assert.equal(full.items.length, 21, "full history keeps every turn");
+  assert.equal(full.items.length, 22, "full history keeps every turn plus a boundary marker");
   assert.equal(compacted.items.length, 3, "compacted keeps replacement + what followed");
   assert.equal(compacted.compactedAway, 20);
 
@@ -318,4 +318,31 @@ test("Codex's own compacted context is used instead of the full history", () => 
   assert.deepEqual(texts, ["kept question", "after compaction"]);
   // the compaction boundary is surfaced, not silently dropped
   assert.ok(JSON.stringify(mapSessionToClaudeLines(compacted)).includes("Codex compacted the conversation here"));
+});
+
+test("full history mode marks the compaction point the way Claude expects", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-bound-"));
+  const sdir = path.join(dir, "sessions", "2026", "07", "24");
+  fs.mkdirSync(sdir, { recursive: true });
+  const SID = "55555555-5555-4555-8555-555555555555";
+  const msg = (role: string, text: string) => ({ type: "message", role, content: [{ type: "input_text", text }] });
+  const rows = [
+    { timestamp: "2026-07-24T00:00:00.000Z", type: "session_meta", payload: { id: SID, cwd: "/p" } },
+    { timestamp: "2026-07-24T00:00:01.000Z", type: "response_item", payload: msg("user", "before compaction") },
+    { timestamp: "2026-07-24T00:00:02.000Z", type: "compacted", payload: { replacement_history: [msg("user", "kept")] } },
+    { timestamp: "2026-07-24T00:00:03.000Z", type: "response_item", payload: msg("user", "after compaction") },
+  ];
+  fs.writeFileSync(path.join(sdir, `rollout-2026-07-24T00-00-00-${SID}.jsonl`), rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+
+  const full = loadCodexSessions(dir, { useCodexCompaction: false })[0];
+  const lines = mapSessionToClaudeLines(full);
+
+  const boundary = lines.findIndex((l) => l.type === "system" && l.subtype === "compact_boundary");
+  assert.ok(boundary > 0, "a compact boundary is emitted");
+  // Claude keeps only what follows the last boundary
+  const after = lines.slice(boundary + 1).map((l) => (l.message.content as any[])[0]?.text);
+  assert.deepEqual(after, ["after compaction"]);
+  assert.deepEqual(validateTranscript(lines), []);
+  // the chain stays linked across the marker
+  for (let i = 1; i < lines.length; i++) assert.equal(lines[i].parentUuid, lines[i - 1].uuid);
 });

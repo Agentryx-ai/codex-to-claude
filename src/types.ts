@@ -133,7 +133,10 @@ export interface ClaudeTranscriptLine {
   sessionId: string;
   version: string;
   gitBranch?: string;
-  type: "user" | "assistant";
+  type: "user" | "assistant" | "system";
+  subtype?: string;
+  /** Claude drops everything before the last compact boundary when loading. */
+  compactMetadata?: { preservedSegment?: unknown };
   message: { role: "user" | "assistant"; content: AnthropicBlock[]; model?: string };
   uuid: string;
   timestamp: string; // ISO-8601 UTC

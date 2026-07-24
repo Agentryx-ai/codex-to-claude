@@ -93,16 +93,23 @@ export function parseRollout(
 
     // Codex compacted here: everything before is replaced by the shortened
     // context it carried forward.
-    if (rec.type === "compacted" && useCompaction) {
+    if (rec.type === "compacted") {
       const replacement = payload["replacement_history"];
-      if (Array.isArray(replacement) && replacement.length > 0) {
-        compactedAway += items.length;
-        items.length = 0;
-        for (const it of replacement) {
-          if (it && typeof it === "object") {
-            items.push({ tsMs, payload: it as Record<string, unknown> });
+      if (useCompaction) {
+        if (Array.isArray(replacement) && replacement.length > 0) {
+          compactedAway += items.length;
+          items.length = 0;
+          for (const it of replacement) {
+            if (it && typeof it === "object") {
+              items.push({ tsMs, payload: it as Record<string, unknown> });
+            }
           }
         }
+      } else {
+        // Keep the history, but record where Codex compacted. Claude has its own
+        // boundary marker and loads only what follows the last one, so the full
+        // transcript stays on disk without being replayed in full.
+        items.push({ tsMs, payload: { type: "__compact_boundary__" } });
       }
       continue;
     }
