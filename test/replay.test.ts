@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { mapSessionToClaudeLines } from "../src/map.ts";
+import { loadCodexSessions } from "../src/codex-source.ts";
 import { validateTranscript } from "../src/validate.ts";
 import { MISSING_RESULT_TEXT, repairTranscript } from "../src/repair.ts";
 import type { CodexSession } from "../src/types.ts";
@@ -285,4 +286,36 @@ test("genuinely repeated messages are kept", () => {
   ]));
   const texts = lines.filter((l) => l.type === "user").map((l) => (l.message.content as any[])[0].text);
   assert.deepEqual(texts, ["resume", "resume"], "same text at different times is not a duplicate");
+});
+
+test("Codex's own compacted context is used instead of the full history", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-comp-"));
+  const sdir = path.join(dir, "sessions", "2026", "07", "24");
+  fs.mkdirSync(sdir, { recursive: true });
+  const SID = "44444444-4444-4444-8444-444444444444";
+  const line = (o: unknown) => JSON.stringify(o);
+  const msg = (role: string, text: string) => ({ type: "message", role, content: [{ type: "input_text", text }] });
+  const rows = [
+    { timestamp: "2026-07-24T00:00:00.000Z", type: "session_meta", payload: { id: SID, cwd: "/p" } },
+    // history that Codex later compacted away
+    ...Array.from({ length: 20 }, (_, i) => ({ timestamp: "2026-07-24T00:00:01.000Z", type: "response_item", payload: msg("user", `old ${i}`) })),
+    { timestamp: "2026-07-24T00:00:02.000Z", type: "compacted", payload: {
+        replacement_history: [msg("user", "kept question"), { type: "compaction", id: "cmp_1" }] } },
+    { timestamp: "2026-07-24T00:00:03.000Z", type: "response_item", payload: msg("user", "after compaction") },
+  ];
+  fs.writeFileSync(path.join(sdir, `rollout-2026-07-24T00-00-00-${SID}.jsonl`), rows.map(line).join("\n") + "\n");
+
+  const compacted = loadCodexSessions(dir, { useCodexCompaction: true })[0];
+  const full = loadCodexSessions(dir, { useCodexCompaction: false })[0];
+
+  assert.equal(full.items.length, 21, "full history keeps every turn");
+  assert.equal(compacted.items.length, 3, "compacted keeps replacement + what followed");
+  assert.equal(compacted.compactedAway, 20);
+
+  const texts = mapSessionToClaudeLines(compacted)
+    .filter((l) => !l.isMeta)
+    .map((l) => (l.message.content as any[])[0].text);
+  assert.deepEqual(texts, ["kept question", "after compaction"]);
+  // the compaction boundary is surfaced, not silently dropped
+  assert.ok(JSON.stringify(mapSessionToClaudeLines(compacted)).includes("Codex compacted the conversation here"));
 });

@@ -87,6 +87,8 @@ export interface CodexSession {
   isArchived?: boolean;
   /** Messages the human actually wrote (Codex's injected preamble excluded). */
   userMessageCount: number;
+  /** Items Codex compacted away and that this import therefore does not carry. */
+  compactedAway?: number;
 }
 
 // ---------- Claude Code transcript (target) ----------

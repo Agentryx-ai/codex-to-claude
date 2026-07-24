@@ -47,7 +47,11 @@ function blocksToText(content: unknown): string {
 }
 
 /** Parse a single rollout file into a CodexSession (returns null if it has no usable content). */
-export function parseRollout(rolloutPath: string): CodexSession | null {
+export function parseRollout(
+  rolloutPath: string,
+  opts: ParseOptions = {},
+): CodexSession | null {
+  const useCompaction = opts.useCodexCompaction !== false;
   let raw: string;
   try {
     raw = fs.readFileSync(rolloutPath, "utf8");
@@ -60,9 +64,7 @@ export function parseRollout(rolloutPath: string): CodexSession | null {
   let firstTsMs: number | null = null;
   let lastTsMs: number | null = null;
   let model: string | null = null;
-  let messageCount = 0;
-  let title = "";
-  let userMessageCount = 0;
+  let compactedAway = 0;
 
   for (const line of raw.split(/\r?\n/)) {
     if (line.trim() === "") continue;
@@ -88,26 +90,43 @@ export function parseRollout(rolloutPath: string): CodexSession | null {
       if (typeof m === "string" && m !== "") model = m;
       continue;
     }
+
+    // Codex compacted here: everything before is replaced by the shortened
+    // context it carried forward.
+    if (rec.type === "compacted" && useCompaction) {
+      const replacement = payload["replacement_history"];
+      if (Array.isArray(replacement) && replacement.length > 0) {
+        compactedAway += items.length;
+        items.length = 0;
+        for (const it of replacement) {
+          if (it && typeof it === "object") {
+            items.push({ tsMs, payload: it as Record<string, unknown> });
+          }
+        }
+      }
+      continue;
+    }
     if (rec.type !== "response_item") continue;
 
     items.push({ tsMs, payload });
 
-    if (payload["type"] === "message") {
-      const role = payload["role"];
-      if (role === "user" || role === "assistant") messageCount += 1;
-      if (role !== "assistant") {
-        // Only what the human actually wrote counts as a message, and only that
-        // may become the title. Codex's injected preamble is neither.
-        const t = blocksToText(payload["content"]);
-        if (t !== "") {
-          const { request } = splitUserMessage(String(role ?? "user"), t);
-          if (request != null) {
-            userMessageCount += 1;
-            if (title === "") title = request.replace(/\s+/g, " ").slice(0, 100);
-          }
-        }
-      }
-    }
+  }
+
+  // Derived from the final item list, which compaction may have replaced.
+  let messageCount = 0;
+  let userMessageCount = 0;
+  let title = "";
+  for (const { payload } of items) {
+    if (payload["type"] !== "message") continue;
+    const role = payload["role"];
+    if (role === "user" || role === "assistant") messageCount += 1;
+    if (role === "assistant") continue;
+    const t = blocksToText(payload["content"]);
+    if (t === "") continue;
+    const { request } = splitUserMessage(String(role ?? "user"), t);
+    if (request == null) continue;
+    userMessageCount += 1;
+    if (title === "") title = request.replace(/\s+/g, " ").slice(0, 100);
   }
 
   if (items.length === 0) return null;
@@ -154,6 +173,7 @@ export function parseRollout(rolloutPath: string): CodexSession | null {
     source,
     isChild,
     userMessageCount,
+    compactedAway,
   };
 }
 
@@ -167,11 +187,14 @@ export function deriveSessionIdFromFilename(rolloutPath: string): string {
 }
 
 /** Discover + parse all sessions under a codex home. */
-export function loadCodexSessions(codexHome: string): CodexSession[] {
+export function loadCodexSessions(
+  codexHome: string,
+  opts: ParseOptions = {},
+): CodexSession[] {
   const files = discoverRolloutFiles(codexHome);
   const sessions: CodexSession[] = [];
   for (const f of files) {
-    const s = parseRollout(f);
+    const s = parseRollout(f, opts);
     if (s) sessions.push(s);
   }
   // newest last-activity first
@@ -179,9 +202,24 @@ export function loadCodexSessions(codexHome: string): CodexSession[] {
   return sessions;
 }
 
+export interface ParseOptions {
+  /**
+   * Use the context Codex itself compacted to, instead of the full history.
+   *
+   * When Codex compacts, it writes a `compacted` item whose `replacement_history`
+   * is the shortened context it carried forward — typically a few dozen items in
+   * place of thousands. Replaying the full history instead can exceed Claude's
+   * context window before the first message. Codex's own importer does no
+   * summarising either; it just seeds token counts so its auto-compaction fires
+   * on the next turn, which Claude cannot do because it fails first.
+   */
+  useCodexCompaction?: boolean;
+}
+
 export interface DesktopSelectOptions {
   interactiveOnly?: boolean; // drop `codex exec` automation runs
   includeArchived?: boolean;
+  useCodexCompaction?: boolean;
 }
 export interface DesktopSelectResult {
   via: "desktop" | "db" | "scan";
@@ -212,7 +250,7 @@ export function loadDesktopSessions(
       for (const r of rows) {
         if (!r.rolloutPath) continue;
         if (opts.interactiveOnly && r.source.includes("exec")) continue;
-        const s = parseRollout(r.rolloutPath);
+        const s = parseRollout(r.rolloutPath, opts);
         if (!s) continue;
         if (s.title === "" && r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
         if (r.source) s.source = r.source;
@@ -234,7 +272,7 @@ export function loadDesktopSessions(
     const sessions: CodexSession[] = [];
     for (const r of rows) {
       if (!r.rolloutPath) continue;
-      const s = parseRollout(r.rolloutPath);
+      const s = parseRollout(r.rolloutPath, opts);
       if (!s) continue;
       if (s.title === "" && r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
       if (r.source) s.source = r.source;
@@ -250,7 +288,7 @@ export function loadDesktopSessions(
   // Fallback: file scan + semantic Desktop-equivalent filter.
   // (archived threads are physically moved to archived_sessions/, so scanning
   // sessions/ already excludes them.)
-  const sessions = loadCodexSessions(codexHome).filter((s) => {
+  const sessions = loadCodexSessions(codexHome, opts).filter((s) => {
     if (s.isChild) return false;
     if (s.source.includes("subagent")) return false;
     if (opts.interactiveOnly && s.source.includes("exec")) return false;

@@ -49,6 +49,8 @@ SELECTION (Codex Desktop conversation-list criteria)
   --projects-only      only conversations assigned to a Codex project
   --projectless-only   only conversations with no project (Codex 'Recents')
   --include-empty      keep threads the user never wrote in (Codex hides these)
+  --full-history       import every turn instead of the context Codex compacted
+                       to (faithful, but may not fit Claude's context window)
   --max-tool-output <n>  cap each tool result at n characters (default 4000)
   --max-chars <n>        cap the whole transcript (default 1000000); older turns
                          are dropped so a resumed conversation fits the context
@@ -133,6 +135,7 @@ function main(argv: string[]): number {
       "include-empty": { type: "boolean", default: false },
       "max-tool-output": { type: "string" },
       "max-chars": { type: "string" },
+      "full-history": { type: "boolean", default: false },
     },
   });
 
@@ -145,6 +148,9 @@ function main(argv: string[]): number {
     interactiveOnly: values["interactive-only"] === true,
     includeArchived:
       values["include-archived"] === true || values["archived-only"] === true,
+    // Codex already compacted long sessions; replaying the full history instead
+    // can exceed Claude's context window.
+    useCodexCompaction: values["full-history"] !== true,
   });
   const selected = applyFilter(all, filter, nowMs);
 

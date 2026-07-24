@@ -227,6 +227,28 @@ export function mapSessionToClaudeLines(
       continue;
     }
 
+    // Marks where Codex compacted: everything before it was replaced by the
+    // summary Codex carried forward. That summary is encrypted in the rollout,
+    // so only the boundary can be represented.
+    if (type === "compaction") {
+      flushAssistant();
+      emit(
+        "user",
+        [
+          {
+            type: "text",
+            text:
+              "[codex-to-claude] Codex compacted the conversation here. Earlier turns " +
+              "were replaced by a summary that is encrypted in the source session, so " +
+              "only the messages Codex carried forward are present.",
+          },
+        ],
+        tsMs,
+        { isMeta: true },
+      );
+      continue;
+    }
+
     // A sub-agent reporting back to the main thread. Real content (task results),
     // but authored by neither the user nor the main assistant, so it lands as
     // injected context. `encrypted_content` blocks carry no readable text and are
