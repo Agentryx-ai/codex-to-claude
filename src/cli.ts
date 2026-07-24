@@ -26,6 +26,7 @@ import {
   writeWrapperRecord,
 } from "./claude-desktop-target.ts";
 import { validateTranscript } from "./validate.ts";
+import { fixTranscriptFile } from "./fix.ts";
 import type { SessionFilter } from "./types.ts";
 
 const HELP = `codex-import — import Codex CLI/Desktop sessions into Claude Code / Claude Desktop
@@ -38,6 +39,7 @@ the equivalent filter if no index DB is present.)
 
 USAGE
   codex-import list   [options] [--json]
+  codex-import fix    [--dry-run]        de-duplicate already-imported transcripts
   codex-import import [options] [--dry-run] [--force] [--include-reasoning] [--version-tag <s>]
 
 SELECTION (Codex Desktop conversation-list criteria)
@@ -47,6 +49,9 @@ SELECTION (Codex Desktop conversation-list criteria)
   --projects-only      only conversations assigned to a Codex project
   --projectless-only   only conversations with no project (Codex 'Recents')
   --include-empty      keep threads the user never wrote in (Codex hides these)
+  --max-tool-output <n>  cap each tool result at n characters (default 4000)
+  --max-chars <n>        cap the whole transcript (default 1000000); older turns
+                         are dropped so a resumed conversation fits the context
 
 OPTIONAL REFINEMENTS (off by default)
   --since-days <n>   only threads active within N days
@@ -126,6 +131,8 @@ function main(argv: string[]): number {
       "projectless-only": { type: "boolean", default: false },
       "archived-only": { type: "boolean", default: false },
       "include-empty": { type: "boolean", default: false },
+      "max-tool-output": { type: "string" },
+      "max-chars": { type: "string" },
     },
   });
 
@@ -287,6 +294,11 @@ function main(argv: string[]): number {
           typeof values["title-prefix"] === "string"
             ? (values["title-prefix"] as string)
             : undefined,
+        maxToolChars:
+          values["max-tool-output"] != null
+            ? Number(values["max-tool-output"])
+            : undefined,
+        maxChars: values["max-chars"] != null ? Number(values["max-chars"]) : undefined,
       });
       if (lines.length === 0) {
         skipped += 1;

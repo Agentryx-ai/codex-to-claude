@@ -5,7 +5,7 @@ import type {
   CodexSession,
 } from "./types.ts";
 import { splitUserMessage } from "./preamble.ts";
-import { repairTranscript } from "./repair.ts";
+import { applyBudget, repairTranscript } from "./repair.ts";
 
 export interface MapOptions {
   /** Value written to each line's `version` field. */
@@ -14,9 +14,26 @@ export interface MapOptions {
   includeReasoning?: boolean;
   /** Prefix prepended to the conversation title (via customTitle on the first line). */
   titlePrefix?: string;
+  /**
+   * Cap on a single tool result, in characters. Tool output dominates a Codex
+   * transcript (~50% of bytes here) while prose is a rounding error, and Claude
+   * replays the whole transcript on resume — an uncapped import can exceed the
+   * context window before the first message. Codex's own importer caps at 4000.
+   */
+  maxToolChars?: number;
+  /** Ceiling on the whole transcript, in characters. 0 disables trimming. */
+  maxChars?: number;
 }
 
 const DEFAULT_VERSION = "0.0.0-codex-import";
+const DEFAULT_MAX_TOOL_CHARS = 4000;
+
+function truncate(text: string, limit: number): string {
+  if (limit <= 0 || text.length <= limit) return text;
+  const dropped = text.length - limit;
+  return `${text.slice(0, limit)}
+… [truncated ${dropped} characters]`;
+}
 
 function textFromContent(content: unknown): string {
   if (typeof content === "string") return content.trim();
@@ -71,7 +88,12 @@ function safeJsonParse(s: unknown): unknown {
  * always an object (and is occasionally not valid JSON at all), so coerce here
  * while preserving the original payload.
  */
-function toToolInput(raw: unknown): Record<string, unknown> {
+function toToolInput(raw: unknown, limit = DEFAULT_MAX_TOOL_CHARS): Record<string, unknown> {
+  if (typeof raw === "string" && raw.length > limit * 4) {
+    // An oversized argument blob (a whole patch, a pasted file) is not worth the
+    // context it costs on replay.
+    return { input: truncate(raw, limit * 4) };
+  }
   const parsed = safeJsonParse(raw);
   if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
     return parsed as Record<string, unknown>;
@@ -109,6 +131,7 @@ export function mapSessionToClaudeLines(
 ): ClaudeTranscriptLine[] {
   const version = opts.version ?? DEFAULT_VERSION;
   const includeReasoning = opts.includeReasoning ?? false;
+  const maxToolChars = opts.maxToolChars ?? DEFAULT_MAX_TOOL_CHARS;
   const gitBranch = session.meta.git?.branch;
   const model = session.model ?? undefined;
 
@@ -240,7 +263,7 @@ export function mapSessionToClaudeLines(
         type: "tool_use",
         id: callId,
         name: String(payload["name"] ?? "unknown"),
-        input: toToolInput(payload["arguments"]),
+        input: toToolInput(payload["arguments"], maxToolChars),
       });
       continue;
     }
@@ -259,20 +282,22 @@ export function mapSessionToClaudeLines(
       // Not every variant uses `output` (tool_search_output carries `tools`).
       const output =
         payload["output"] ?? payload["result"] ?? payload["tools"] ?? payload["content"];
-      const text = normalizeOutput(output);
+      const full = normalizeOutput(output);
+      const text = truncate(full !== "" ? full : `[${String(type ?? "tool output")}]`, maxToolChars);
       emit(
         "user",
         [
           {
             type: "tool_result",
             tool_use_id: callId,
-            // tool_result content must be non-empty.
-            content: text !== "" ? text : `[${String(type ?? "tool output")}]`,
+            content: text,
             ...(isErrorOutput(output) ? { is_error: true } : {}),
           },
         ],
         tsMs,
-        { toolUseResult: output },
+        // toolUseResult repeats the payload for rendering; keep the capped copy
+        // rather than a second full-size one.
+        { toolUseResult: text },
       );
       continue;
     }
@@ -293,7 +318,7 @@ export function mapSessionToClaudeLines(
           typeof payload["name"] === "string" && payload["name"] !== ""
             ? payload["name"]
             : String(type ?? "tool").replace(/_call$/, ""),
-        input: toToolInput(payload["arguments"] ?? payload["input"]),
+        input: toToolInput(payload["arguments"] ?? payload["input"], maxToolChars),
       });
     }
   }
@@ -302,6 +327,7 @@ export function mapSessionToClaudeLines(
 
   // Make the result replayable before anything reads lines[0].
   lines = repairTranscript(lines);
+  lines = applyBudget(lines, opts.maxChars).lines;
 
   // Set a display title on the first line. Claude reads "customTitle" from the
   // file head with the highest priority, so this controls the sidebar label.

@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mapSessionToClaudeLines } from "../src/map.ts";
 import { validateTranscript } from "../src/validate.ts";
-import { MISSING_RESULT_TEXT } from "../src/repair.ts";
+import { MISSING_RESULT_TEXT, repairTranscript } from "../src/repair.ts";
 import type { CodexSession } from "../src/types.ts";
 
 function session(items: CodexSession["items"]): CodexSession {
@@ -231,4 +231,58 @@ test("a transcript changed after import is detected, not silently overwritten", 
   assert.equal(inspectTarget(p, ours), "modified");       // continued in Claude
 
   assert.equal(inspectTarget(p, undefined), "foreign");   // not written by us at all
+});
+
+test("oversized tool output is capped so an import can still be resumed", () => {
+  const big = "x".repeat(50_000);
+  const lines = mapSessionToClaudeLines(session([
+    user("run it"),
+    { tsMs: 2, payload: { type: "function_call", name: "sh", arguments: "{}", call_id: "c1" } },
+    { tsMs: 3, payload: { type: "function_call_output", call_id: "c1", output: big } },
+  ]), { maxToolChars: 100 });
+  const tr: any = (lines[2].message.content as any[])[0];
+  assert.ok(tr.content.length < 300, "tool_result is capped");
+  assert.match(tr.content, /truncated 49900 characters/);
+  assert.equal(lines[2].toolUseResult, tr.content, "the duplicate copy is capped too");
+  assert.deepEqual(validateTranscript(lines), []);
+});
+
+test("a transcript too large for the context window is trimmed to recent history", () => {
+  const items: any[] = [user("first question", 1)];
+  for (let i = 0; i < 60; i++) {
+    items.push({ tsMs: i + 2, payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "y".repeat(3000) }] } });
+    items.push({ tsMs: i + 2, payload: { type: "message", role: "user", content: [{ type: "input_text", text: `turn ${i}` }] } });
+  }
+  const lines = mapSessionToClaudeLines(session(items), { maxChars: 40_000 });
+  const size = lines.reduce((a, l) => a + JSON.stringify(l).length + 1, 0);
+  assert.ok(size <= 45_000, `trimmed to ${size}`);
+  assert.equal(lines[0].isMeta, true);
+  assert.match(String((lines[0].message.content as any[])[0].text), /earlier message\(s\) were omitted/);
+  assert.deepEqual(validateTranscript(lines), []);
+});
+
+test("a history Claude replayed into the file is collapsed back to one copy", () => {
+  const once = mapSessionToClaudeLines(session([
+    user("hello", 1),
+    { tsMs: 2, payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "hi" }] } },
+    user("again", 3),
+  ]));
+  // Claude re-appends the same conversation with fresh uuids
+  const replayed = once.map((l) => ({ ...l, uuid: randomUUID() }));
+  const doubled = [...once, ...replayed];
+  assert.equal(doubled.length, once.length * 2);
+
+  const cleaned = repairTranscript(doubled);
+  assert.equal(cleaned.length, once.length, "duplicates collapsed");
+  assert.deepEqual(validateTranscript(cleaned), []);
+});
+
+test("genuinely repeated messages are kept", () => {
+  const lines = mapSessionToClaudeLines(session([
+    user("resume", 1),
+    { tsMs: 2, payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "ok" }] } },
+    user("resume", 3),
+  ]));
+  const texts = lines.filter((l) => l.type === "user").map((l) => (l.message.content as any[])[0].text);
+  assert.deepEqual(texts, ["resume", "resume"], "same text at different times is not a duplicate");
 });
