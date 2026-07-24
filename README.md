@@ -32,11 +32,10 @@ Cursor sessions into Codex, including settings, projects and recent chats.
 Claude has nothing that goes the other way, so switching means leaving your
 history behind.
 
-This tool covers that direction. It was written for
-[Agentryx](https://github.com/Agentryx-ai), an AI-native agent harness, which
-needs conversation history to move between providers. It is a separate
-repository because it depends on the on-disk formats of two proprietary desktop
-apps. Those change on someone else's schedule, and that churn is easier to
+This tool covers that direction. It was written for Agentryx, an AI-native
+agent harness in development, which needs conversation history to move between
+providers. It is a separate repository because it depends on the on-disk
+formats of two proprietary desktop apps. Those change on someone else's schedule, and that churn is easier to
 handle in a small project that can be fixed and released on its own. It works
 without Agentryx.
 
