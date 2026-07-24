@@ -81,6 +81,10 @@ export interface CodexSession {
   approvalMode?: string | null;
   /** Codex reasoning effort, when known. */
   reasoningEffort?: string | null;
+  /** Assigned to a registered Codex Desktop project (vs. only reachable via Recents). */
+  hasProject?: boolean;
+  /** Archived in Codex. */
+  isArchived?: boolean;
 }
 
 // ---------- Claude Code transcript (target) ----------
@@ -147,6 +151,12 @@ export interface SessionFilter {
   fromMs?: number; // inclusive lower bound on lastTs
   toMs?: number; // inclusive upper bound on lastTs
   id?: string; // exact sessionId
+  /** Only conversations assigned to a Codex Desktop project. */
+  projectsOnly?: boolean;
+  /** Only conversations with no project (Codex shows these under Recents). */
+  projectlessOnly?: boolean;
+  /** Only archived conversations (requires archived to be fetched). */
+  archivedOnly?: boolean;
 }
 
 // ---------- Import history (dedup) ----------

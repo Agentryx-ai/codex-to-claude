@@ -41,6 +41,9 @@ USAGE
 SELECTION (Codex Desktop conversation-list criteria)
   --interactive-only   drop non-interactive 'codex exec' automation runs
   --include-archived   also include archived threads (Desktop hides these)
+  --archived-only      only archived threads (implies --include-archived)
+  --projects-only      only conversations assigned to a Codex project
+  --projectless-only   only conversations with no project (Codex 'Recents')
 
 OPTIONAL REFINEMENTS (off by default)
   --since-days <n>   only threads active within N days
@@ -74,6 +77,9 @@ function toFilter(v: Record<string, string | boolean | undefined>): SessionFilte
     fromMs: parseDateMs(v["from"] as string | undefined),
     toMs: parseDateMs(v["to"] as string | undefined),
     id: typeof v["id"] === "string" ? v["id"] : undefined,
+    projectsOnly: v["projects-only"] === true,
+    projectlessOnly: v["projectless-only"] === true,
+    archivedOnly: v["archived-only"] === true,
   };
 }
 
@@ -112,6 +118,9 @@ function main(argv: string[]): number {
       "no-register": { type: "boolean", default: false },
       "sessions-root": { type: "string" },
       model: { type: "string" },
+      "projects-only": { type: "boolean", default: false },
+      "projectless-only": { type: "boolean", default: false },
+      "archived-only": { type: "boolean", default: false },
     },
   });
 
@@ -122,7 +131,8 @@ function main(argv: string[]): number {
 
   const { via, sessions: all } = loadDesktopSessions(codexHome, {
     interactiveOnly: values["interactive-only"] === true,
-    includeArchived: values["include-archived"] === true,
+    includeArchived:
+      values["include-archived"] === true || values["archived-only"] === true,
   });
   const selected = applyFilter(all, filter, nowMs);
 
@@ -160,9 +170,22 @@ function main(argv: string[]): number {
         : via === "db"
           ? "index DB (all top-level threads)"
           : "file scan";
+    // Codex Desktop groups by project; conversations with no project are only
+    // reachable through Recents, so show the split before anything is imported.
+    const grouped = new Map<string, number>();
+    for (const s of selected) {
+      const key =
+        s.hasProject === false ? "(no project — Recents)" : (s.projectName ?? "(unknown)");
+      grouped.set(key, (grouped.get(key) ?? 0) + 1);
+    }
+    const byProject = [...grouped.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, c]) => `  ${String(c).padStart(3)}  ${k}`)
+      .join("\n");
     process.stderr.write(
       `Codex home: ${codexHome}\nSelection: Codex Desktop conversation list (via ${viaLabel}).\n` +
-        `${all.length} conversation(s), ${selected.length} after refinements.  [${kindStr}]\n\n`,
+        `${all.length} conversation(s), ${selected.length} after refinements.  [${kindStr}]\n\n` +
+        `By project:\n${byProject}\n\n`,
     );
     if (selected.length === 0) {
       process.stderr.write("No conversations match.\n");

@@ -18,6 +18,7 @@ export interface DbThreadRow {
   sandboxPolicy: string | null;
   approvalMode: string | null;
   reasoningEffort: string | null;
+  archived: boolean;
 }
 
 export interface DbSelectOptions {
@@ -80,7 +81,7 @@ export function loadDesktopThreads(
       `source, ` +
       `COALESCE(recency_at_ms, updated_at_ms, updated_at) AS updatedAtMs, ` +
       `sandbox_policy AS sandboxPolicy, approval_mode AS approvalMode, ` +
-      `reasoning_effort AS reasoningEffort ` +
+      `reasoning_effort AS reasoningEffort, archived AS archived ` +
       `FROM threads WHERE ${where.join(" AND ")} ` +
       `ORDER BY updatedAtMs DESC`;
 
@@ -95,6 +96,7 @@ export function loadDesktopThreads(
       sandboxPolicy: r.sandboxPolicy != null ? String(r.sandboxPolicy) : null,
       approvalMode: r.approvalMode != null ? String(r.approvalMode) : null,
       reasoningEffort: r.reasoningEffort != null ? String(r.reasoningEffort) : null,
+      archived: Number((r as unknown as { archived?: unknown }).archived ?? 0) === 1,
     }));
   } catch {
     return null;
@@ -129,7 +131,7 @@ export function loadThreadsByIds(
       `COALESCE(title, name, first_user_message, '') AS title, source, ` +
       `COALESCE(recency_at_ms, updated_at_ms, updated_at) AS updatedAtMs, ` +
       `sandbox_policy AS sandboxPolicy, approval_mode AS approvalMode, ` +
-      `reasoning_effort AS reasoningEffort ` +
+      `reasoning_effort AS reasoningEffort, archived AS archived ` +
       `FROM threads WHERE id IN (${placeholders}) ${archClause} ORDER BY updatedAtMs DESC`;
     const rows = db.prepare(sql).all(...ids) as unknown as DbThreadRow[];
     return rows.map((r) => ({
@@ -142,6 +144,7 @@ export function loadThreadsByIds(
       sandboxPolicy: r.sandboxPolicy != null ? String(r.sandboxPolicy) : null,
       approvalMode: r.approvalMode != null ? String(r.approvalMode) : null,
       reasoningEffort: r.reasoningEffort != null ? String(r.reasoningEffort) : null,
+      archived: Number((r as unknown as { archived?: unknown }).archived ?? 0) === 1,
     }));
   } catch {
     return null;

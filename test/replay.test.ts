@@ -186,3 +186,26 @@ test("Codex reasoning effort maps to Claude effort", () => {
   assert.equal(mapEffort("ultra"), "max");   // no Claude peer
   assert.equal(mapEffort(null), "high");     // Codex left it unset
 });
+
+// --- scoping by project membership and archive state ---
+import { applyFilter } from "../src/filter.ts";
+
+test("conversations can be scoped by project membership", () => {
+  const mk = (id: string, hasProject: boolean, projectName: string, isArchived = false) =>
+    ({ ...session([]), sessionId: id, cwd: "/p", lastTsMs: 1, firstTsMs: 1,
+       hasProject, projectName, isArchived });
+  const all = [
+    mk("a", true, "ReTalk"),
+    mk("b", true, "Riddlemesh"),
+    mk("c", false, "(no project)"),
+    mk("d", false, "(no project)", true),
+  ] as any[];
+  const ids = (f: any) => applyFilter(all, f, 2).map((s) => s.sessionId).sort();
+
+  assert.deepEqual(ids({}), ["a", "b", "c", "d"]);
+  assert.deepEqual(ids({ projectsOnly: true }), ["a", "b"]);
+  assert.deepEqual(ids({ projectlessOnly: true }), ["c", "d"]);
+  assert.deepEqual(ids({ archivedOnly: true }), ["d"]);
+  // --project matches the Codex project name, not just the cwd
+  assert.deepEqual(ids({ project: "riddle" }), ["b"]);
+});

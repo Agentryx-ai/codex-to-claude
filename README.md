@@ -76,7 +76,29 @@ Writing only a transcript leaves it invisible. This tool writes both.
 
 By default it doesn't invent a filter — it reproduces the Codex Desktop sidebar: threads assigned to a registered project plus project-less ones, non-archived, newest first. It falls back to Codex's thread index, then to a rollout-file scan, when that state isn't available.
 
-Optional refinements, all off by default: `--interactive-only` (drop `codex exec` automation runs), `--project`, `--since-days`, `--max`, `--from` / `--to`, `--id`.
+Codex Desktop groups conversations **by project**; ones with no project are only reachable through *Recents*, and plenty of people never look at them. So membership is a first-class filter:
+
+| Flag | Brings over |
+| --- | --- |
+| *(default)* | everything the sidebar shows — projects **and** Recents |
+| `--projects-only` | only conversations assigned to a project |
+| `--projectless-only` | only the Recents ones |
+| `--project <name>` | one project, matched on its Codex name or its path |
+| `--include-archived` / `--archived-only` | include, or restrict to, archived threads |
+
+`list` prints the per-project breakdown first, so you can see the split before importing:
+
+```
+21 conversation(s), 21 after refinements.  [vscode:21]
+
+By project:
+    3  Agentryx-New
+    2  ReTalk
+    ...
+    1  (no project — Recents)
+```
+
+Further refinements, all off by default: `--interactive-only` (drop `codex exec` automation runs), `--since-days`, `--max`, `--from` / `--to`, `--id`.
 
 ### What gets converted
 
@@ -140,8 +162,9 @@ node --experimental-strip-types --experimental-sqlite src/cli.ts list
 | `--title-prefix <s>` | — | prefix titles, e.g. `"[Codex] "` |
 | `--include-reasoning` | off | keep Codex reasoning as `thinking` blocks |
 | `--interactive-only` | off | drop non-interactive `codex exec` runs |
-| `--include-archived` | off | include archived Codex threads |
-| `--project <substr>` / `--id <id>` | — | narrow to a project, or one conversation |
+| `--projects-only` / `--projectless-only` | off | only project conversations, or only Recents |
+| `--include-archived` / `--archived-only` | off | include, or restrict to, archived threads |
+| `--project <name>` / `--id <id>` | — | narrow to a project (name or path), or one conversation |
 | `--since-days <n>` / `--max <n>` / `--from` / `--to` | unlimited | extra age, count and range limits |
 | `--force` | — | re-import, and refresh records this tool created |
 | `--no-register` | off | transcript only (**will not appear in the list**) |

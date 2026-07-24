@@ -22,9 +22,16 @@ export function applyFilter(
     if (activity < ageFloorMs) return false;
     if (filter.fromMs != null && activity < filter.fromMs) return false;
     if (filter.toMs != null && activity > filter.toMs) return false;
+    // Codex Desktop groups by project; conversations with no project are only
+    // reachable through Recents, so they are separable here.
+    if (filter.projectsOnly === true && s.hasProject !== true) return false;
+    if (filter.projectlessOnly === true && s.hasProject === true) return false;
+    if (filter.archivedOnly === true && s.isArchived !== true) return false;
     if (filter.project != null && filter.project !== "") {
       const needle = filter.project.toLowerCase();
-      if (!s.cwd.toLowerCase().includes(needle)) return false;
+      const inName = (s.projectName ?? "").toLowerCase().includes(needle);
+      const inCwd = s.cwd.toLowerCase().includes(needle);
+      if (!inName && !inCwd) return false;
     }
     return true;
   });

@@ -207,7 +207,10 @@ export function loadDesktopSessions(
         if (!s) continue;
         if (r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
         if (r.source) s.source = r.source;
-        s.projectName = selection.threadProject.get(r.id)?.name ?? "(projectless)";
+        const proj = selection.threadProject.get(r.id) ?? null;
+        s.projectName = proj?.name ?? "(no project)";
+        s.hasProject = proj != null;
+        s.isArchived = r.archived;
         s.sandboxPolicy = r.sandboxPolicy;
         s.approvalMode = r.approvalMode;
         s.reasoningEffort = r.reasoningEffort;
@@ -229,6 +232,7 @@ export function loadDesktopSessions(
       s.sandboxPolicy = r.sandboxPolicy;
       s.approvalMode = r.approvalMode;
       s.reasoningEffort = r.reasoningEffort;
+      s.isArchived = r.archived;
       sessions.push(s); // DB already ordered by recency
     }
     return { via: "db", sessions };
