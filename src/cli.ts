@@ -465,11 +465,17 @@ function main(argv: string[]): number {
     if (wsDir != null) {
       const records = recordsByCliSessionId(wsDir);
       const importable = new Map(selected.map((x) => [x.sessionId, x]));
-      for (const rec of history.records) {
-        const entry = records.get(rec.importedSessionId);
+      // Scan the records themselves, not just the history: a record can outlive
+      // its history entry, and then nothing points at it any more.
+      const known = new Map(all.map((x) => [x.sessionId, x]));
+      const candidates = [...records.keys()].filter(
+        (cli) => known.has(cli) || history.records.some((r) => r.importedSessionId === cli),
+      );
+      for (const cliSessionId of candidates) {
+        const entry = records.get(cliSessionId);
         if (entry == null) continue;
 
-        const session = importable.get(rec.importedSessionId);
+        const session = importable.get(cliSessionId);
         if (session == null) {
           // Still listed, but no longer something this tool imports (an empty
           // thread, or one outside the current filters).
@@ -484,10 +490,10 @@ function main(argv: string[]): number {
             } catch {
               /* already gone */
             }
-            const known = all.find((x) => x.sessionId === rec.importedSessionId);
-            if (known) {
+            const source = known.get(cliSessionId);
+            if (source) {
               try {
-                fs.rmSync(targetPathFor(claudeHome, known).targetPath);
+                fs.rmSync(targetPathFor(claudeHome, source).targetPath);
               } catch {
                 /* already gone */
               }
