@@ -2,7 +2,7 @@
 
 Import your Codex conversations into Claude Desktop and Claude Code.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522.6-brightgreen.svg)](https://nodejs.org)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](./package.json)
 
@@ -272,4 +272,8 @@ are trademarks of their respective owners. Back up anything you care about.
 
 ## License
 
-MIT, see [LICENSE](./LICENSE).
+Apache 2.0, see [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
+
+You can use, modify and ship this, including commercially. Keep the copyright
+notice and the NOTICE file, and say what you changed. The license does not
+grant rights to the project's name or marks.

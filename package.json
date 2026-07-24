@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Import Codex conversations into Claude Desktop / Claude Code, with the conversation list, titles and tool calls intact.",
   "type": "module",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": ["codex", "claude", "claude-code", "openai", "anthropic", "session", "transcript", "migration", "import", "ai-agent"],
   "bin": { "codex-to-claude": "src/cli.ts" },
   "scripts": {
@@ -12,5 +12,5 @@
     "test": "node --experimental-strip-types --experimental-sqlite --test test/*.test.ts"
   },
   "engines": { "node": ">=22.6.0" },
-  "files": ["src", "docs", "README.md", "LICENSE"]
+  "files": ["src", "docs", "README.md", "LICENSE", "NOTICE"]
 }
