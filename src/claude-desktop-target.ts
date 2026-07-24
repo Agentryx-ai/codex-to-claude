@@ -140,6 +140,35 @@ export function findRecordFor(
   return null;
 }
 
+/** Every record this tool wrote, keyed by the transcript it points at. */
+export function recordsByCliSessionId(
+  workspaceDir: string,
+): Map<string, { path: string; record: WrapperRecord }> {
+  const out = new Map<string, { path: string; record: WrapperRecord }>();
+  let files: string[];
+  try {
+    files = fs.readdirSync(workspaceDir);
+  } catch {
+    return out;
+  }
+  for (const f of files) {
+    if (!f.startsWith("local_") || !f.endsWith(".json")) continue;
+    const p = path.join(workspaceDir, f);
+    try {
+      const record = JSON.parse(fs.readFileSync(p, "utf8")) as WrapperRecord;
+      if (typeof record.cliSessionId === "string") out.set(record.cliSessionId, { path: p, record });
+    } catch {
+      /* ignore */
+    }
+  }
+  return out;
+}
+
+/** Update just the display title, leaving the rest of the record alone. */
+export function setRecordTitle(recordPath: string, record: WrapperRecord, title: string): void {
+  fs.writeFileSync(recordPath, JSON.stringify({ ...record, title }, null, 2), "utf8");
+}
+
 /** Rewrite a record in place, keeping its identity and creation time. */
 export function refreshWrapperRecord(
   recordPath: string,

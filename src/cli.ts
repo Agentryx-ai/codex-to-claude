@@ -1,4 +1,5 @@
 #!/usr/bin/env -S node --experimental-strip-types --experimental-sqlite
+import fs from "node:fs";
 import { parseArgs } from "node:util";
 import { resolveCodexHome, resolveClaudeHome } from "./paths.ts";
 import { loadDesktopSessions } from "./codex-source.ts";
@@ -21,7 +22,9 @@ import {
   existingCliSessionIds,
   findActiveWorkspaceDir,
   findRecordFor,
+  recordsByCliSessionId,
   refreshWrapperRecord,
+  setRecordTitle,
   resolveDesktopSessionsRoot,
   writeWrapperRecord,
 } from "./claude-desktop-target.ts";
@@ -39,7 +42,9 @@ the equivalent filter if no index DB is present.)
 
 USAGE
   codex-import list   [options] [--json]
-  codex-import fix    [--dry-run]        de-duplicate already-imported transcripts
+  codex-import fix    [--dry-run] [--prune]
+        de-duplicate transcripts, re-sync titles from them, and report or remove
+        records for conversations this tool no longer imports
   codex-import import [options] [--dry-run] [--force] [--include-reasoning] [--version-tag <s>]
 
 SELECTION (Codex Desktop conversation-list criteria)
@@ -136,6 +141,7 @@ function main(argv: string[]): number {
       "max-tool-output": { type: "string" },
       "max-chars": { type: "string" },
       "full-history": { type: "boolean", default: false },
+      prune: { type: "boolean", default: false },
     },
   });
 
@@ -193,7 +199,7 @@ function main(argv: string[]): number {
     const grouped = new Map<string, number>();
     for (const s of selected) {
       const key =
-        s.hasProject === false ? "(no project — Recents)" : (s.projectName ?? "(unknown)");
+        s.hasProject === false ? "(no project)" : (s.projectName ?? "(unknown)");
       grouped.set(key, (grouped.get(key) ?? 0) + 1);
     }
     const byProject = [...grouped.entries()]
@@ -427,6 +433,7 @@ function main(argv: string[]): number {
     // opened, leaving every message twice. Collapse that without re-converting.
     const history = loadImportHistory(claudeHome);
     const dryRun = values["dry-run"] === true;
+    const prune = values["prune"] === true;
     const seenPaths = new Set<string>();
     let scanned = 0;
     let repaired = 0;
@@ -448,9 +455,74 @@ function main(argv: string[]): number {
         );
       }
     }
+    // A record can drift from the transcript it points at: a title corrected in
+    // a later version otherwise only reaches the list on a full re-import.
+    const wsDir = findActiveWorkspaceDir(
+      resolveDesktopSessionsRoot(values["sessions-root"] as string | undefined),
+    );
+    let retitled = 0;
+    let orphaned = 0;
+    if (wsDir != null) {
+      const records = recordsByCliSessionId(wsDir);
+      const importable = new Map(selected.map((x) => [x.sessionId, x]));
+      for (const rec of history.records) {
+        const entry = records.get(rec.importedSessionId);
+        if (entry == null) continue;
+
+        const session = importable.get(rec.importedSessionId);
+        if (session == null) {
+          // Still listed, but no longer something this tool imports (an empty
+          // thread, or one outside the current filters).
+          orphaned += 1;
+          process.stdout.write(
+            `orphan  ${JSON.stringify(String(entry.record.title).slice(0, 56))}` +
+              `${prune ? "  (removed)" : "  — pass --prune to remove"}\n`,
+          );
+          if (prune && !dryRun) {
+            try {
+              fs.rmSync(entry.path);
+            } catch {
+              /* already gone */
+            }
+            const known = all.find((x) => x.sessionId === rec.importedSessionId);
+            if (known) {
+              try {
+                fs.rmSync(targetPathFor(claudeHome, known).targetPath);
+              } catch {
+                /* already gone */
+              }
+            }
+          }
+          continue;
+        }
+
+        const { targetPath } = targetPathFor(claudeHome, session);
+        let title: string | undefined;
+        try {
+          const head = fs.readFileSync(targetPath, "utf8").split(/\r?\n/, 1)[0];
+          title = (JSON.parse(head) as { customTitle?: string }).customTitle;
+        } catch {
+          title = undefined;
+        }
+        if (title != null && title !== entry.record.title) {
+          retitled += 1;
+          process.stdout.write(
+            `retitle ${JSON.stringify(String(entry.record.title).slice(0, 36))}` +
+              ` -> ${JSON.stringify(title.slice(0, 36))}\n`,
+          );
+          if (!dryRun) setRecordTitle(entry.path, entry.record, title);
+        }
+      }
+      if (prune && !dryRun && orphaned > 0) {
+        history.records = history.records.filter((r) => importable.has(r.importedSessionId));
+        saveImportHistory(claudeHome, history);
+      }
+    }
+
     process.stderr.write(
       `\nScanned ${scanned} transcript(s); ${repaired} had duplicates, ` +
-        `${removed} line(s) removed${dryRun ? " (dry-run)" : ""}.\n`,
+        `${removed} line(s) removed; ${retitled} title(s) re-synced; ` +
+        `${orphaned} orphaned record(s)${dryRun ? " (dry-run)" : ""}.\n`,
     );
     return 0;
   }

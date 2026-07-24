@@ -11,10 +11,11 @@ $ codex-to-claude list
 20 conversation(s), 20 after refinements.  [vscode:19  cli:1]
 
 By project:
-    3  Agentryx-New
+    3  Agentryx
     2  ReTalk
-    2  Riddlemesh
-    1  (no project — Recents)
+    2  Itineva
+    1  ModuBoza
+    1  (no project)
     ...
 
 $ codex-to-claude import --dry-run          # writes nothing
