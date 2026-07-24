@@ -401,10 +401,50 @@ function main(argv: string[]): number {
 
     if (!dryRun) saveImportHistory(claudeHome, history);
     process.stderr.write(
-      `\nDone. imported=${imported} skipped=${skipped} registered=${registered}\n` +
+      `\nDone. imported=${imported} skipped=${skipped} registered=${registered}` +
+        (conflicts > 0 ? ` conflicts=${conflicts}` : "") +
+        `\n` +
+        (conflicts > 0
+          ? force
+            ? `${conflicts} conversation(s) had local changes and were overwritten (--force).\n`
+            : `${conflicts} conversation(s) left untouched because they changed after import.\n`
+          : "") +
         (registered > 0
           ? `Restart Claude Desktop to see the imported conversations.\n`
           : ""),
+    );
+    return 0;
+  }
+
+  if (command === "fix") {
+    // Claude appends the history it replayed when an imported conversation is
+    // opened, leaving every message twice. Collapse that without re-converting.
+    const history = loadImportHistory(claudeHome);
+    const dryRun = values["dry-run"] === true;
+    const seenPaths = new Set<string>();
+    let scanned = 0;
+    let repaired = 0;
+    let removed = 0;
+    for (const rec of history.records) {
+      const s = all.find((x) => x.sessionId === rec.importedSessionId);
+      if (!s) continue;
+      const { targetPath } = targetPathFor(claudeHome, s);
+      if (seenPaths.has(targetPath)) continue;
+      seenPaths.add(targetPath);
+      const res = fixTranscriptFile(targetPath, dryRun);
+      if (res == null) continue;
+      scanned += 1;
+      if (res.changed) {
+        repaired += 1;
+        removed += res.before - res.after;
+        process.stdout.write(
+          `${dryRun ? "would fix" : "fixed"}  ${res.before} -> ${res.after} lines  ${targetPath}\n`,
+        );
+      }
+    }
+    process.stderr.write(
+      `\nScanned ${scanned} transcript(s); ${repaired} had duplicates, ` +
+        `${removed} line(s) removed${dryRun ? " (dry-run)" : ""}.\n`,
     );
     return 0;
   }
