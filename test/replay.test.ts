@@ -1,5 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createHash } from "node:crypto";
 import { mapSessionToClaudeLines } from "../src/map.ts";
 import { validateTranscript } from "../src/validate.ts";
 import { MISSING_RESULT_TEXT } from "../src/repair.ts";
@@ -10,7 +14,7 @@ function session(items: CodexSession["items"]): CodexSession {
     sessionId: "33333333-3333-4333-8333-333333333333",
     rolloutPath: "/x.jsonl", cwd: "/p", cwdOriginal: "/p", meta: {},
     firstTsMs: 1, lastTsMs: 9, items, model: null, messageCount: 1,
-    title: "t", source: "cli", isChild: false,
+    title: "t", source: "cli", isChild: false, userMessageCount: 1,
   };
 }
 const user = (text: string, ts = 1) => ({ tsMs: ts, payload: { type: "message", role: "user", content: [{ type: "input_text", text }] } });
@@ -208,4 +212,23 @@ test("conversations can be scoped by project membership", () => {
   assert.deepEqual(ids({ archivedOnly: true }), ["d"]);
   // --project matches the Codex project name, not just the cwd
   assert.deepEqual(ids({ project: "riddle" }), ["b"]);
+});
+
+// --- re-import conflict handling ---
+import { inspectTarget } from "../src/claude-target.ts";
+
+test("a transcript changed after import is detected, not silently overwritten", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "c2c-"));
+  const p = path.join(dir, "t.jsonl");
+
+  assert.equal(inspectTarget(p, undefined), "absent");
+
+  fs.writeFileSync(p, "line one\n", "utf8");
+  const ours = createHash("sha256").update("line one\n", "utf8").digest("hex");
+  assert.equal(inspectTarget(p, ours), "ours");           // untouched since we wrote it
+
+  fs.appendFileSync(p, "claude added this\n", "utf8");
+  assert.equal(inspectTarget(p, ours), "modified");       // continued in Claude
+
+  assert.equal(inspectTarget(p, undefined), "foreign");   // not written by us at all
 });

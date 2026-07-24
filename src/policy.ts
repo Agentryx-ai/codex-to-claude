@@ -46,7 +46,14 @@ export function mapPermissionMode(
   approvalMode: string | null | undefined,
 ): ClaudePermissionMode {
   const approval = (approvalMode ?? "").trim().toLowerCase();
-  if (approval === "on-request" || approval === "untrusted" || approval === "on-failure") {
+  // Codex asks before acting — the same thing Claude's `default` mode means.
+  // `default` is matched explicitly, not just reached as a fallback.
+  if (
+    approval === "default" ||
+    approval === "on-request" ||
+    approval === "untrusted" ||
+    approval === "on-failure"
+  ) {
     return "default";
   }
 

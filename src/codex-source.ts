@@ -5,6 +5,7 @@ import type { CodexSession, RolloutLine, SessionMeta } from "./types.ts";
 import { normalizeCwd } from "./paths.ts";
 import { loadDesktopThreads, loadThreadsByIds } from "./codex-db.ts";
 import { loadDesktopSelection } from "./codex-desktop-state.ts";
+import { splitUserMessage } from "./preamble.ts";
 
 /** Recursively collect rollout .jsonl files under <codexHome>/sessions. */
 export function discoverRolloutFiles(codexHome: string): string[] {
@@ -61,6 +62,7 @@ export function parseRollout(rolloutPath: string): CodexSession | null {
   let model: string | null = null;
   let messageCount = 0;
   let title = "";
+  let userMessageCount = 0;
 
   for (const line of raw.split(/\r?\n/)) {
     if (line.trim() === "") continue;
@@ -92,11 +94,17 @@ export function parseRollout(rolloutPath: string): CodexSession | null {
 
     if (payload["type"] === "message") {
       const role = payload["role"];
-      if (role === "user" || role === "assistant") {
-        messageCount += 1;
-        if (title === "" && role === "user") {
-          const t = blocksToText(payload["content"]);
-          if (t !== "") title = t.replace(/\s+/g, " ").slice(0, 100);
+      if (role === "user" || role === "assistant") messageCount += 1;
+      if (role !== "assistant") {
+        // Only what the human actually wrote counts as a message, and only that
+        // may become the title. Codex's injected preamble is neither.
+        const t = blocksToText(payload["content"]);
+        if (t !== "") {
+          const { request } = splitUserMessage(String(role ?? "user"), t);
+          if (request != null) {
+            userMessageCount += 1;
+            if (title === "") title = request.replace(/\s+/g, " ").slice(0, 100);
+          }
         }
       }
     }
@@ -145,6 +153,7 @@ export function parseRollout(rolloutPath: string): CodexSession | null {
     title,
     source,
     isChild,
+    userMessageCount,
   };
 }
 
@@ -205,7 +214,7 @@ export function loadDesktopSessions(
         if (opts.interactiveOnly && r.source.includes("exec")) continue;
         const s = parseRollout(r.rolloutPath);
         if (!s) continue;
-        if (r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
+        if (s.title === "" && r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
         if (r.source) s.source = r.source;
         const proj = selection.threadProject.get(r.id) ?? null;
         s.projectName = proj?.name ?? "(no project)";
@@ -227,7 +236,7 @@ export function loadDesktopSessions(
       if (!r.rolloutPath) continue;
       const s = parseRollout(r.rolloutPath);
       if (!s) continue;
-      if (r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
+      if (s.title === "" && r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
       if (r.source) s.source = r.source;
       s.sandboxPolicy = r.sandboxPolicy;
       s.approvalMode = r.approvalMode;

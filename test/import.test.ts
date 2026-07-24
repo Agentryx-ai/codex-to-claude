@@ -112,7 +112,7 @@ test("applyFilter honors since-days, max, project, and id", () => {
   const mk = (id: string, lastTsMs: number, cwd: string): CodexSession => ({
     sessionId: id, rolloutPath: `/x/${id}.jsonl`, cwd, meta: {},
     firstTsMs: lastTsMs, lastTsMs, items: [{ tsMs: lastTsMs, payload: { type: "message", role: "user" } }],
-    model: null, messageCount: 1, title: id, source: "cli", isChild: false,
+    model: null, messageCount: 1, title: id, source: "cli", isChild: false, userMessageCount: 1,
   });
   const recent = mk("recent", Date.parse("2026-07-24T00:00:00Z"), "/a/webapp");
   const old = mk("old", Date.parse("2026-05-01T00:00:00Z"), "/a/webapp");

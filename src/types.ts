@@ -85,6 +85,8 @@ export interface CodexSession {
   hasProject?: boolean;
   /** Archived in Codex. */
   isArchived?: boolean;
+  /** Messages the human actually wrote (Codex's injected preamble excluded). */
+  userMessageCount: number;
 }
 
 // ---------- Claude Code transcript (target) ----------
@@ -157,16 +159,21 @@ export interface SessionFilter {
   projectlessOnly?: boolean;
   /** Only archived conversations (requires archived to be fetched). */
   archivedOnly?: boolean;
+  /** Keep conversations the user never wrote in. Codex hides these. */
+  includeEmpty?: boolean;
 }
 
 // ---------- Import history (dedup) ----------
 
 export interface ImportHistoryRecord {
+  /** sha256 of the source rollout, for idempotent re-runs. */
   contentSha256: string;
   importedAtMs: number;
   importedSessionId: string;
   sourceRolloutPath: string;
   projectRoot: string;
+  /** sha256 of the transcript this tool wrote, to detect later edits by Claude. */
+  targetSha256?: string;
 }
 export interface ImportHistory {
   version: 1;

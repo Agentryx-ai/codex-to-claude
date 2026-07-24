@@ -18,6 +18,9 @@ export function applyFilter(
 
   const filtered = sessions.filter((s) => {
     if (filter.id != null && s.sessionId !== filter.id) return false;
+    // A thread the user never wrote in is not a conversation; Codex leaves its
+    // title and preview empty and keeps it out of the sidebar.
+    if (filter.includeEmpty !== true && s.userMessageCount === 0) return false;
     const activity = s.lastTsMs ?? s.firstTsMs ?? 0;
     if (activity < ageFloorMs) return false;
     if (filter.fromMs != null && activity < filter.fromMs) return false;

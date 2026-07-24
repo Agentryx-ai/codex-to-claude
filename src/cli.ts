@@ -7,6 +7,8 @@ import { applyFilter } from "./filter.ts";
 import { mapSessionToClaudeLines } from "./map.ts";
 import {
   alreadyImported,
+  inspectTarget,
+  lastRecordFor,
   loadImportHistory,
   makeHistoryRecord,
   saveImportHistory,
@@ -44,6 +46,7 @@ SELECTION (Codex Desktop conversation-list criteria)
   --archived-only      only archived threads (implies --include-archived)
   --projects-only      only conversations assigned to a Codex project
   --projectless-only   only conversations with no project (Codex 'Recents')
+  --include-empty      keep threads the user never wrote in (Codex hides these)
 
 OPTIONAL REFINEMENTS (off by default)
   --since-days <n>   only threads active within N days
@@ -80,6 +83,7 @@ function toFilter(v: Record<string, string | boolean | undefined>): SessionFilte
     projectsOnly: v["projects-only"] === true,
     projectlessOnly: v["projectless-only"] === true,
     archivedOnly: v["archived-only"] === true,
+    includeEmpty: v["include-empty"] === true,
   };
 }
 
@@ -121,6 +125,7 @@ function main(argv: string[]): number {
       "projects-only": { type: "boolean", default: false },
       "projectless-only": { type: "boolean", default: false },
       "archived-only": { type: "boolean", default: false },
+      "include-empty": { type: "boolean", default: false },
     },
   });
 
@@ -212,6 +217,7 @@ function main(argv: string[]): number {
     let imported = 0;
     let skipped = 0;
     let registered = 0;
+    let conflicts = 0;
 
     // Claude Desktop lists conversations from wrapper records, not from the
     // transcript files. Without a record an imported transcript stays invisible.
@@ -298,13 +304,43 @@ function main(argv: string[]): number {
         continue;
       }
       const { targetPath } = targetPathFor(claudeHome, s);
+
+      // Claude appends to a transcript when the conversation is opened or
+      // continued. Overwriting then destroys messages sent after the import,
+      // so a transcript that changed since we wrote it is left alone.
+      const prior = lastRecordFor(history, s.sessionId);
+      const state = inspectTarget(targetPath, prior?.targetSha256);
+      if (force && (state === "modified" || state === "foreign")) {
+        conflicts += 1;
+        process.stdout.write(
+          state === "modified"
+            ? `WARN  ${s.sessionId}  overwriting a transcript continued in Claude
+`
+            : `WARN  ${s.sessionId}  overwriting a transcript this tool did not write
+`,
+        );
+      }
+      if (!force && (state === "modified" || state === "foreign")) {
+        conflicts += 1;
+        skipped += 1;
+        process.stdout.write(
+          state === "modified"
+            ? `skip  ${s.sessionId}  (continued in Claude since import — use --force to overwrite)
+`
+            : `skip  ${s.sessionId}  (a transcript this tool did not write is already there)
+`,
+        );
+        continue;
+      }
+
       if (dryRun) {
         process.stdout.write(`would write  ${lines.length} lines -> ${targetPath}\n`);
         imported += 1;
         continue;
       }
       const res = writeTranscript(claudeHome, s, lines);
-      history.records.push(makeHistoryRecord(s, sha, nowMs));
+      history.records = history.records.filter((r) => r.importedSessionId !== s.sessionId);
+      history.records.push(makeHistoryRecord(s, sha, nowMs, res.sha256));
       imported += 1;
       process.stdout.write(
         `import ${res.lineCount} lines (${res.bytes}b) -> ${res.targetPath}\n`,
