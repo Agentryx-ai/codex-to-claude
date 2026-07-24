@@ -75,6 +75,12 @@ export interface CodexSession {
   isChild: boolean;
   /** Codex Desktop project name this thread is assigned to (desktop-state selection only). */
   projectName?: string;
+  /** Codex sandbox policy JSON, when known (thread index only). */
+  sandboxPolicy?: string | null;
+  /** Codex approval mode ("never", "on-request", ...), when known. */
+  approvalMode?: string | null;
+  /** Codex reasoning effort, when known. */
+  reasoningEffort?: string | null;
 }
 
 // ---------- Claude Code transcript (target) ----------

@@ -208,6 +208,9 @@ export function loadDesktopSessions(
         if (r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
         if (r.source) s.source = r.source;
         s.projectName = selection.threadProject.get(r.id)?.name ?? "(projectless)";
+        s.sandboxPolicy = r.sandboxPolicy;
+        s.approvalMode = r.approvalMode;
+        s.reasoningEffort = r.reasoningEffort;
         sessions.push(s);
       }
       return { via: "desktop", sessions };
@@ -223,6 +226,9 @@ export function loadDesktopSessions(
       if (!s) continue;
       if (r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
       if (r.source) s.source = r.source;
+      s.sandboxPolicy = r.sandboxPolicy;
+      s.approvalMode = r.approvalMode;
+      s.reasoningEffort = r.reasoningEffort;
       sessions.push(s); // DB already ordered by recency
     }
     return { via: "db", sessions };

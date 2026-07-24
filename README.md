@@ -70,8 +70,26 @@ Optional refinements (all off by default): `--interactive-only` (drop `codex exe
 | `function_call_output` | `tool_result` block + `toolUseResult` |
 | `reasoning` | `thinking` block (`--include-reasoning`) |
 | injected context — `developer` role, `<environment_context>`, `<instructions>`, `<recommended_plugins>`, skills/plugins/permissions blocks … | user line flagged `isMeta` |
+| `agent_message` (sub-agent reporting back) | `isMeta` user line, prefixed with the sender |
 | `session_meta` | session id, cwd, git branch, timestamps |
+| Codex sandbox + approval policy | Claude `permissionMode` (see below) |
+| Codex reasoning effort | Claude `effort` |
 | `event_msg`, `world_state` | skipped (conversation is rebuilt from response items) |
+| `compacted` | skipped — its `replacement_history` duplicates items already in the file |
+
+### Execution policy
+
+Codex separates *approval* (when to ask) from *sandbox* (what it may touch); Claude folds both into one `permissionMode`. The mapping keeps the intent and only falls back to prompting when nothing corresponds:
+
+| Codex | Claude |
+| --- | --- |
+| approval asks the user (`on-request`, `untrusted`, `on-failure`) | `default` |
+| never asks + `danger-full-access` / sandbox disabled | `bypassPermissions` |
+| never asks + `workspace-write` / `managed` | `acceptEdits` |
+| never asks + `read-only` | `plan` |
+| anything unrecognised | `default` — never something more permissive |
+
+Reasoning effort maps straight across (`low`/`medium`/`high`/`xhigh`; Codex `ultra` clamps to `max`). The Claude model has no Codex equivalent and defaults to `claude-opus-5` — override with `--model`.
 
 | pasted screenshots (`input_image`) | Anthropic `image` block |
 
@@ -108,6 +126,7 @@ node --experimental-strip-types --experimental-sqlite src/cli.ts list
 | `--codex-home <p>` | `$CODEX_HOME` or `~/.codex` | source |
 | `--claude-home <p>` | `$CLAUDE_CONFIG_DIR` or `~/.claude` | transcript target |
 | `--sessions-root <p>` | `%APPDATA%/Claude/claude-code-sessions` | session-record target |
+| `--model <id>` | `claude-opus-5` | model recorded for resumed sessions |
 
 Re-runs are safe: imports are deduplicated by source content hash, and a conversation is never registered twice.
 
@@ -126,7 +145,7 @@ See [docs/FORMATS.md](./docs/FORMATS.md). Verified on 21 real conversations: 0 v
 
 This tool writes into another application's local data, so it is deliberately conservative:
 
-- **Additive only.** It creates new files. It never edits or deletes an existing transcript or session record.
+- **Additive only.** It creates new files. It never deletes anything, and the only records it rewrites are ones it created itself (matched by the transcript they point at, with `--force`).
 - **Dry run first.** `--dry-run` prints every target path and writes nothing.
 - **Reversible.** To undo, delete the transcripts it wrote plus the `local_*.json` records it created (both are listed in its output).
 - Prefer running with Claude Desktop closed.

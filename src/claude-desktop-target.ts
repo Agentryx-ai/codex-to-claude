@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { ClaudeTranscriptLine } from "./types.ts";
+import { mapEffort, mapPermissionMode } from "./policy.ts";
 
 export interface WrapperRecord {
   sessionId: string;
@@ -111,6 +112,49 @@ export function existingCliSessionIds(workspaceDir: string): Set<string> {
   return out;
 }
 
+/**
+ * Locate a record pointing at a given transcript. Used to refresh a record this
+ * tool created earlier; records created by Claude itself are never touched,
+ * because their cliSessionId is Claude's own and never matches an imported one.
+ */
+export function findRecordFor(
+  workspaceDir: string,
+  cliSessionId: string,
+): { path: string; record: WrapperRecord } | null {
+  let files: string[];
+  try {
+    files = fs.readdirSync(workspaceDir);
+  } catch {
+    return null;
+  }
+  for (const f of files) {
+    if (!f.startsWith("local_") || !f.endsWith(".json")) continue;
+    const p = path.join(workspaceDir, f);
+    try {
+      const record = JSON.parse(fs.readFileSync(p, "utf8")) as WrapperRecord;
+      if (record.cliSessionId === cliSessionId) return { path: p, record };
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
+}
+
+/** Rewrite a record in place, keeping its identity and creation time. */
+export function refreshWrapperRecord(
+  recordPath: string,
+  previous: WrapperRecord,
+  next: WrapperRecord,
+): void {
+  const merged: WrapperRecord = {
+    ...next,
+    sessionId: previous.sessionId,
+    createdAt: previous.createdAt,
+    isArchived: previous.isArchived,
+  };
+  fs.writeFileSync(recordPath, JSON.stringify(merged, null, 2), "utf8");
+}
+
 export interface BuildRecordInput {
   cliSessionId: string;
   /** Original-cased cwd (Codex session cwd). */
@@ -118,8 +162,10 @@ export interface BuildRecordInput {
   lines: ClaudeTranscriptLine[];
   title: string;
   model?: string;
-  effort?: string;
-  permissionMode?: string;
+  /** Codex policy, mapped to Claude's single permissionMode when present. */
+  sandboxPolicy?: string | null;
+  approvalMode?: string | null;
+  reasoningEffort?: string | null;
 }
 
 export function buildWrapperRecord(input: BuildRecordInput): WrapperRecord {
@@ -137,11 +183,11 @@ export function buildWrapperRecord(input: BuildRecordInput): WrapperRecord {
     createdAt: Number.isNaN(createdAt) ? Date.now() : createdAt,
     lastActivityAt: Number.isNaN(lastActivityAt) ? Date.now() : lastActivityAt,
     model: input.model ?? "claude-opus-5",
-    effort: input.effort ?? "high",
+    effort: mapEffort(input.reasoningEffort),
     isArchived: false,
     title: input.title,
     titleSource: "auto",
-    permissionMode: input.permissionMode ?? "default",
+    permissionMode: mapPermissionMode(input.sandboxPolicy, input.approvalMode),
     completedTurns,
     bridgeSessionIds: [],
     alwaysAllowedReasons: [],

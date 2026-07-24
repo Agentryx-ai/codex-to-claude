@@ -151,3 +151,38 @@ test("pasted images survive as Claude image blocks", () => {
   assert.deepEqual(blocks[1].source, { type: "base64", media_type: "image/png", data: png });
   assert.deepEqual(validateTranscript(lines), []);
 });
+
+// --- Codex execution policy -> Claude permission mode ---
+import { mapPermissionMode, mapEffort, sandboxKind } from "../src/policy.ts";
+
+test("Codex sandbox + approval map onto Claude permission modes", () => {
+  const P = (s: string | null, a: string | null) => mapPermissionMode(s, a);
+  // never asks + no restrictions -> bypass
+  assert.equal(P('{"type":"danger-full-access"}', "never"), "bypassPermissions");
+  assert.equal(P('{"type":"disabled"}', "never"), "bypassPermissions");
+  // never asks but confined to a workspace -> auto-accept edits
+  assert.equal(P('{"type":"workspace-write","writable_roots":[]}', "never"), "acceptEdits");
+  assert.equal(P('{"type":"managed","file_system":{"type":"restricted"}}', "never"), "acceptEdits");
+  // read-only -> plan
+  assert.equal(P('{"type":"read-only"}', "never"), "plan");
+  // Codex asks the user -> Claude asks the user, regardless of sandbox
+  assert.equal(P('{"type":"danger-full-access"}', "on-request"), "default");
+  assert.equal(P('{"type":"disabled"}', "untrusted"), "default");
+  // nothing corresponds -> ask, never something more permissive
+  assert.equal(P(null, null), "default");
+  assert.equal(P("garbage", "never"), "default");
+});
+
+test("sandboxKind parses both JSON and bare values", () => {
+  assert.equal(sandboxKind('{"type":"read-only"}'), "read-only");
+  assert.equal(sandboxKind("workspace-write"), "workspace-write");
+  assert.equal(sandboxKind(null), null);
+  assert.equal(sandboxKind(""), null);
+});
+
+test("Codex reasoning effort maps to Claude effort", () => {
+  assert.equal(mapEffort("low"), "low");
+  assert.equal(mapEffort("xhigh"), "xhigh");
+  assert.equal(mapEffort("ultra"), "max");   // no Claude peer
+  assert.equal(mapEffort(null), "high");     // Codex left it unset
+});

@@ -204,6 +204,23 @@ export function mapSessionToClaudeLines(
       continue;
     }
 
+    // A sub-agent reporting back to the main thread. Real content (task results),
+    // but authored by neither the user nor the main assistant, so it lands as
+    // injected context. `encrypted_content` blocks carry no readable text and are
+    // dropped by textFromContent.
+    if (type === "agent_message") {
+      const body = textFromContent(payload["content"]);
+      if (body !== "") {
+        flushAssistant();
+        const from = String(payload["author"] ?? "agent");
+        const to = String(payload["recipient"] ?? "/root");
+        emit("user", [{ type: "text", text: `[agent ${from} → ${to}]\n${body}` }], tsMs, {
+          isMeta: true,
+        });
+      }
+      continue;
+    }
+
     if (type === "reasoning") {
       if (!includeReasoning) continue;
       const summary = textFromContent(payload["summary"]);

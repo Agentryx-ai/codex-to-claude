@@ -18,6 +18,8 @@ import {
   buildWrapperRecord,
   existingCliSessionIds,
   findActiveWorkspaceDir,
+  findRecordFor,
+  refreshWrapperRecord,
   resolveDesktopSessionsRoot,
   writeWrapperRecord,
 } from "./claude-desktop-target.ts";
@@ -109,6 +111,7 @@ function main(argv: string[]): number {
       "title-prefix": { type: "string" },
       "no-register": { type: "boolean", default: false },
       "sessions-root": { type: "string" },
+      model: { type: "string" },
     },
   });
 
@@ -228,6 +231,10 @@ function main(argv: string[]): number {
               cwd: s.cwdOriginal || s.cwd,
               lines: catchUp,
               title: catchUp[0]?.customTitle ?? s.title ?? "(untitled)",
+              model: typeof values["model"] === "string" ? (values["model"] as string) : undefined,
+              sandboxPolicy: s.sandboxPolicy,
+              approvalMode: s.approvalMode,
+              reasoningEffort: s.reasoningEffort,
             });
             writeWrapperRecord(workspaceDir, record);
             alreadyRegistered.add(s.sessionId);
@@ -280,12 +287,39 @@ function main(argv: string[]): number {
         `import ${res.lineCount} lines (${res.bytes}b) -> ${res.targetPath}\n`,
       );
 
-      if (workspaceDir != null && !alreadyRegistered.has(s.sessionId)) {
+      if (workspaceDir != null && alreadyRegistered.has(s.sessionId) && force) {
+        // Refresh the record we wrote earlier so remapped fields (title,
+        // permission mode, effort, turn count) take effect.
+        const existing = findRecordFor(workspaceDir, s.sessionId);
+        if (existing) {
+          refreshWrapperRecord(
+            existing.path,
+            existing.record,
+            buildWrapperRecord({
+              cliSessionId: s.sessionId,
+              cwd: s.cwdOriginal || s.cwd,
+              lines,
+              title: lines[0]?.customTitle ?? s.title ?? "(untitled)",
+              model: typeof values["model"] === "string" ? (values["model"] as string) : undefined,
+              sandboxPolicy: s.sandboxPolicy,
+              approvalMode: s.approvalMode,
+              reasoningEffort: s.reasoningEffort,
+            }),
+          );
+          registered += 1;
+          process.stdout.write(`  refreshed -> ${existing.record.sessionId}.json
+`);
+        }
+      } else if (workspaceDir != null && !alreadyRegistered.has(s.sessionId)) {
         const record = buildWrapperRecord({
           cliSessionId: s.sessionId,
           cwd: s.cwdOriginal || s.cwd,
           lines,
           title: lines[0]?.customTitle ?? s.title ?? "(untitled)",
+          model: typeof values["model"] === "string" ? (values["model"] as string) : undefined,
+          sandboxPolicy: s.sandboxPolicy,
+          approvalMode: s.approvalMode,
+          reasoningEffort: s.reasoningEffort,
         });
         writeWrapperRecord(workspaceDir, record);
         alreadyRegistered.add(s.sessionId);

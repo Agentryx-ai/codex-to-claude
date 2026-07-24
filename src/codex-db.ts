@@ -15,6 +15,9 @@ export interface DbThreadRow {
   title: string;
   source: string;
   updatedAtMs: number | null;
+  sandboxPolicy: string | null;
+  approvalMode: string | null;
+  reasoningEffort: string | null;
 }
 
 export interface DbSelectOptions {
@@ -75,7 +78,9 @@ export function loadDesktopThreads(
       `SELECT id, rollout_path AS rolloutPath, cwd, ` +
       `COALESCE(title, name, first_user_message, '') AS title, ` +
       `source, ` +
-      `COALESCE(recency_at_ms, updated_at_ms, updated_at) AS updatedAtMs ` +
+      `COALESCE(recency_at_ms, updated_at_ms, updated_at) AS updatedAtMs, ` +
+      `sandbox_policy AS sandboxPolicy, approval_mode AS approvalMode, ` +
+      `reasoning_effort AS reasoningEffort ` +
       `FROM threads WHERE ${where.join(" AND ")} ` +
       `ORDER BY updatedAtMs DESC`;
 
@@ -87,6 +92,9 @@ export function loadDesktopThreads(
       title: String(r.title ?? ""),
       source: String(r.source ?? ""),
       updatedAtMs: r.updatedAtMs != null ? Number(r.updatedAtMs) : null,
+      sandboxPolicy: r.sandboxPolicy != null ? String(r.sandboxPolicy) : null,
+      approvalMode: r.approvalMode != null ? String(r.approvalMode) : null,
+      reasoningEffort: r.reasoningEffort != null ? String(r.reasoningEffort) : null,
     }));
   } catch {
     return null;
@@ -119,7 +127,9 @@ export function loadThreadsByIds(
     const sql =
       `SELECT id, rollout_path AS rolloutPath, cwd, ` +
       `COALESCE(title, name, first_user_message, '') AS title, source, ` +
-      `COALESCE(recency_at_ms, updated_at_ms, updated_at) AS updatedAtMs ` +
+      `COALESCE(recency_at_ms, updated_at_ms, updated_at) AS updatedAtMs, ` +
+      `sandbox_policy AS sandboxPolicy, approval_mode AS approvalMode, ` +
+      `reasoning_effort AS reasoningEffort ` +
       `FROM threads WHERE id IN (${placeholders}) ${archClause} ORDER BY updatedAtMs DESC`;
     const rows = db.prepare(sql).all(...ids) as unknown as DbThreadRow[];
     return rows.map((r) => ({
@@ -129,6 +139,9 @@ export function loadThreadsByIds(
       title: String(r.title ?? ""),
       source: String(r.source ?? ""),
       updatedAtMs: r.updatedAtMs != null ? Number(r.updatedAtMs) : null,
+      sandboxPolicy: r.sandboxPolicy != null ? String(r.sandboxPolicy) : null,
+      approvalMode: r.approvalMode != null ? String(r.approvalMode) : null,
+      reasoningEffort: r.reasoningEffort != null ? String(r.reasoningEffort) : null,
     }));
   } catch {
     return null;
