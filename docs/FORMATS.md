@@ -1,6 +1,6 @@
 # Formats
 
-What SessionPort reads and writes. These are **undocumented, internal** formats of two proprietary desktop apps, reconstructed by observation. They can change without notice.
+What this tool reads and writes. These are **undocumented, internal** formats of two proprietary desktop apps, reconstructed by observation. They can change without notice.
 
 ## Source — Codex rollout
 
@@ -35,7 +35,7 @@ Calls and results are flat and paired by `call_id`, not nested.
 
 ### Selecting the conversations Codex Desktop lists
 
-Not every rollout is a conversation in the sidebar. Sub-agent threads, `codex exec` automation runs and archived threads all live in the same directory. SessionPort resolves the list from Codex's own state, in this order:
+Not every rollout is a conversation in the sidebar. Sub-agent threads, `codex exec` automation runs and archived threads all live in the same directory. It resolves the list from Codex's own state, in this order:
 
 1. `~/.codex/.codex-global-state.json` — `thread-project-assignments` (threads belonging to a registered project) plus `projectless-thread-ids`. This is the sidebar's membership.
 2. `~/.codex/state_<n>.sqlite` — `threads` (`archived`, `rollout_path`, `title`, `cwd`, `source`, `recency_at_ms`) and `thread_spawn_edges` (parent → child). Used to drop archived and spawned threads, and to resolve each thread's rollout file.
@@ -65,7 +65,7 @@ A conversation needs **two** artifacts. Writing only the transcript leaves it in
 }
 ```
 
-Only non-archived records are listed. SessionPort picks the `<accountId>/<deviceId>` directory with active records and the most recent activity, and never touches existing records.
+Only non-archived records are listed. It picks the `<accountId>/<deviceId>` directory with active records and the most recent activity, and never touches existing records.
 
 ### 2. Transcript (the content)
 
@@ -107,7 +107,7 @@ Titles resolve as `customTitle` → `aiTitle` → `lastPrompt` → `summary` →
 
 ## Replay invariants
 
-A transcript can load in the UI and still fail on the next turn with a 400. SessionPort validates every conversion before writing, and repairs these:
+A transcript can load in the UI and still fail on the next turn with a 400. Every conversion is validated before writing, and repairs these:
 
 - `tool_use.input` must be an object — a JSON string or array is rejected.
 - Every `tool_use` must be answered by a `tool_result` with the same id **in the next message**. Multiple calls in one turn are answered in one user message; calls with no recorded output get a synthesized error result.

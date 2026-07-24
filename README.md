@@ -1,27 +1,27 @@
-# SessionPort
+# codex-to-claude
 
 **Bring your Codex conversations into Claude Desktop / Claude Code — with the list, titles, and tool calls intact.**
 
-OpenAI's Codex ships an "External Agent Import" that pulls Claude Code, Claude Cowork and Cursor sessions *into* Codex. Nothing goes the other way. SessionPort is that missing direction.
+OpenAI's Codex ships an "External Agent Import" that pulls Claude Code, Claude Cowork and Cursor sessions *into* Codex. Nothing goes the other way. This is that missing direction.
 
 ```bash
 # see what would be imported (reads only)
-sessionport list
+codex-to-claude list
 
 # preview the import (writes nothing)
-sessionport import --dry-run
+codex-to-claude import --dry-run
 
 # do it
-sessionport import --title-prefix "[Codex] "
+codex-to-claude import --title-prefix "[Codex] "
 ```
 
 Then restart Claude Desktop — your Codex conversations are in the sidebar, grouped under the same projects, openable and resumable.
 
 ## Why this exists
 
-Migrating between coding agents means losing your history. Existing converters translate CLI session *files* one id at a time. SessionPort targets the **desktop apps**: it selects exactly the conversations Codex Desktop shows you, and registers them so Claude Desktop actually lists them.
+Migrating between coding agents means losing your history. Existing converters translate CLI session *files* one id at a time. It targets the **desktop apps**: it selects exactly the conversations Codex Desktop shows you, and registers them so Claude Desktop actually lists them.
 
-| | CLI converters | SessionPort |
+| | CLI converters | codex-to-claude |
 | --- | --- | --- |
 | Scope | session files | **desktop app → desktop app** |
 | Selection | one session id at a time | **mirrors the Codex Desktop conversation list**, plus browse + filters |
@@ -38,7 +38,7 @@ Claude Desktop stores a conversation in **two** places, and both are required fo
 | Session record | `%APPDATA%/Claude/claude-code-sessions/<account>/<device>/local_<uuid>.json` | **What the conversation list is built from.** Points at a transcript via `cliSessionId` + `cwd`. |
 | Transcript | `~/.claude/projects/<encoded-cwd>/<cliSessionId>.jsonl` | The conversation content. |
 
-Writing only a transcript leaves it invisible. SessionPort writes both.
+Writing only a transcript leaves it invisible. It writes both.
 
 ```
 ~/.codex/sessions/**/rollout-*.jsonl        (Codex rollout)
@@ -52,7 +52,7 @@ Writing only a transcript leaves it invisible. SessionPort writes both.
 
 ## Selection: the same conversations Codex Desktop shows
 
-By default SessionPort does not invent a filter. It reproduces the Codex Desktop sidebar:
+By default it does not invent a filter. It reproduces the Codex Desktop sidebar:
 
 - reads Codex Desktop's UI state for which threads belong to a registered project (plus project-less threads)
 - keeps non-archived threads only
@@ -73,15 +73,21 @@ Optional refinements (all off by default): `--interactive-only` (drop `codex exe
 | `session_meta` | session id, cwd, git branch, timestamps |
 | `event_msg`, `world_state` | skipped (conversation is rebuilt from response items) |
 
+| pasted screenshots (`input_image`) | Anthropic `image` block |
+
 Codex injects a lot of tooling boilerplate as messages. Those are marked `isMeta`, which is Claude's own convention for non-user-authored context: they stay in the transcript but out of the conversation — and out of the title, so a session is titled by what you actually asked.
+
+### How injected context is detected
+
+Codex composes these client-side and sends them as ordinary user messages — the rollout carries **no flag** that separates them from something you typed. Detection is therefore textual, and deliberately conservative: a `developer`-role message, a Codex-specific leading tag, or a known heading **plus** a corroborating structure (`## <name>: <path>` entries, a `<response-annotations>` block, an `<INSTRUCTIONS>` block). Generic tags a user might paste (`<instructions>`, `<root>`, `<payload>`, …) are never treated as injected. Attachment lists and response annotations wrap your real message after a `## My request for Codex:` marker, so they are split rather than hidden.
 
 ## Install
 
 Requires **Node.js ≥ 22.6**. No dependencies.
 
 ```bash
-git clone https://github.com/<owner>/sessionport
-cd sessionport
+git clone https://github.com/Agentryx-ai/codex-to-claude
+cd codex-to-claude
 node --experimental-strip-types --experimental-sqlite src/cli.ts list
 ```
 
@@ -107,7 +113,7 @@ Re-runs are safe: imports are deduplicated by source content hash, and a convers
 
 ## Replay safety
 
-A transcript can appear in the sidebar and still fail on the next message with a 400. SessionPort validates every conversion before writing and repairs the cases Codex's flat tool format produces:
+A transcript can appear in the sidebar and still fail on the next message with a 400. It validates every conversion before writing and repairs the cases Codex's flat tool format produces:
 
 - `tool_use.input` coerced to an object (`Input should be an object` otherwise)
 - every `tool_use` answered by a `tool_result` in the next message — multiple calls in a turn answered together, missing outputs synthesized
@@ -118,7 +124,7 @@ See [docs/FORMATS.md](./docs/FORMATS.md). Verified on 21 real conversations: 0 v
 
 ## Safety
 
-SessionPort writes into another application's local data, so it is deliberately conservative:
+This tool writes into another application's local data, so it is deliberately conservative:
 
 - **Additive only.** It creates new files. It never edits or deletes an existing transcript or session record.
 - **Dry run first.** `--dry-run` prints every target path and writes nothing.

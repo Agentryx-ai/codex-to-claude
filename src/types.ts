@@ -99,7 +99,12 @@ export interface AnthropicToolResultBlock {
   content: string;
   is_error?: boolean;
 }
+export interface AnthropicImageBlock {
+  type: "image";
+  source: { type: "base64"; media_type: string; data: string };
+}
 export type AnthropicBlock =
+  | AnthropicImageBlock
   | AnthropicTextBlock
   | AnthropicThinkingBlock
   | AnthropicToolUseBlock

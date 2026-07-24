@@ -1,11 +1,11 @@
 {
-  "name": "sessionport",
+  "name": "codex-to-claude",
   "version": "0.1.0",
   "description": "Import Codex conversations into Claude Desktop / Claude Code, with the conversation list, titles and tool calls intact.",
   "type": "module",
   "license": "MIT",
   "keywords": ["codex", "claude", "claude-code", "openai", "anthropic", "session", "transcript", "migration", "import", "ai-agent"],
-  "bin": { "sessionport": "src/cli.ts" },
+  "bin": { "codex-to-claude": "src/cli.ts" },
   "scripts": {
     "list": "node --experimental-strip-types --experimental-sqlite src/cli.ts list",
     "import": "node --experimental-strip-types --experimental-sqlite src/cli.ts import",

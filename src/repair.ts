@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import type { AnthropicBlock, ClaudeTranscriptLine } from "./types.ts";
 
 export const MISSING_RESULT_TEXT =
-  "[sessionport] no tool result was recorded in the source session";
+  "[codex-to-claude] no tool result was recorded in the source session";
 
 function blocksOf(line: ClaudeTranscriptLine): AnthropicBlock[] {
   const c = line.message?.content;

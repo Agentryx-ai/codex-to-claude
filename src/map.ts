@@ -31,6 +31,30 @@ function textFromContent(content: unknown): string {
   return parts.join("\n").trim();
 }
 
+/** Media types the Messages API accepts for an image block. */
+const IMAGE_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+
+/**
+ * Codex stores pasted screenshots as `input_image` blocks holding a data URL.
+ * Flattening a message to text would drop them, so convert to Claude image blocks.
+ */
+function imagesFromContent(content: unknown): AnthropicBlock[] {
+  if (!Array.isArray(content)) return [];
+  const out: AnthropicBlock[] = [];
+  for (const b of content) {
+    if (!b || typeof b !== "object") continue;
+    if ((b as { type?: unknown }).type !== "input_image") continue;
+    const url = (b as { image_url?: unknown }).image_url;
+    if (typeof url !== "string") continue;
+    const m = /^data:([^;,]+);base64,(.+)$/s.exec(url);
+    if (!m) continue; // remote URLs cannot be inlined
+    const mediaType = m[1].toLowerCase();
+    if (!IMAGE_MEDIA_TYPES.has(mediaType)) continue;
+    out.push({ type: "image", source: { type: "base64", media_type: mediaType, data: m[2] } });
+  }
+  return out;
+}
+
 function safeJsonParse(s: unknown): unknown {
   if (typeof s !== "string") return s ?? {};
   try {
@@ -159,11 +183,18 @@ export function mapSessionToClaudeLines(
           // response annotations); split so the request survives as a real
           // message while the boilerplate becomes meta.
           const { meta, request } = splitUserMessage(String(role ?? "user"), text);
+          const images = imagesFromContent(payload["content"]);
           if (meta != null) {
-            emit("user", [{ type: "text", text: meta }], tsMs, { isMeta: true });
+            emit(
+              "user",
+              [{ type: "text", text: meta }, ...(request == null ? images : [])],
+              tsMs,
+              { isMeta: true },
+            );
           }
           if (request != null) {
-            emit("user", [{ type: "text", text: request }], tsMs);
+            // attachments belong with what the user actually wrote
+            emit("user", [{ type: "text", text: request }, ...images], tsMs);
             if (firstRealUserText === "") {
               firstRealUserText = request.replace(/\s+/g, " ").trim().slice(0, 100);
             }

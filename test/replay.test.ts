@@ -136,3 +136,18 @@ test("generic tags a user might paste are not treated as injected", () => {
   assert.ok(splitUserMessage("user", "<environment_context><cwd>/p</cwd>").meta !== null);
   assert.ok(splitUserMessage("developer", "anything at all").meta !== null);
 });
+
+test("pasted images survive as Claude image blocks", () => {
+  const png = "iVBORw0KGgoAAAANSUhEUg";
+  const lines = mapSessionToClaudeLines(session([
+    { tsMs: 1, payload: { type: "message", role: "user", content: [
+      { type: "input_text", text: "what is wrong here?" },
+      { type: "input_image", image_url: `data:image/png;base64,${png}`, detail: "high" },
+    ] } },
+  ]));
+  const blocks: any[] = lines[0].message.content as any[];
+  assert.equal(blocks[0].type, "text");
+  assert.equal(blocks[1].type, "image");
+  assert.deepEqual(blocks[1].source, { type: "base64", media_type: "image/png", data: png });
+  assert.deepEqual(validateTranscript(lines), []);
+});
