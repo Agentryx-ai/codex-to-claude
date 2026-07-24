@@ -4,7 +4,7 @@ import type {
   ClaudeTranscriptLine,
   CodexSession,
 } from "./types.ts";
-import { isInjectedContext } from "./preamble.ts";
+import { splitUserMessage } from "./preamble.ts";
 import { repairTranscript } from "./repair.ts";
 
 export interface MapOptions {
@@ -155,10 +155,18 @@ export function mapSessionToClaudeLines(
         // but out of the conversation and out of title derivation.
         flushAssistant();
         if (text !== "") {
-          const meta = isInjectedContext(String(role ?? "user"), text);
-          emit("user", [{ type: "text", text }], tsMs, meta ? { isMeta: true } : undefined);
-          if (!meta && firstRealUserText === "") {
-            firstRealUserText = text.replace(/\s+/g, " ").trim().slice(0, 100);
+          // Some injections wrap the user's own message (attachment lists,
+          // response annotations); split so the request survives as a real
+          // message while the boilerplate becomes meta.
+          const { meta, request } = splitUserMessage(String(role ?? "user"), text);
+          if (meta != null) {
+            emit("user", [{ type: "text", text: meta }], tsMs, { isMeta: true });
+          }
+          if (request != null) {
+            emit("user", [{ type: "text", text: request }], tsMs);
+            if (firstRealUserText === "") {
+              firstRealUserText = request.replace(/\s+/g, " ").trim().slice(0, 100);
+            }
           }
         }
       }

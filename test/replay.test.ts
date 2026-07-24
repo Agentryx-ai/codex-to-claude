@@ -84,3 +84,55 @@ test("validateTranscript detects a non-object tool_use input", () => {
   const issues = validateTranscript(bad);
   assert.ok(issues.some((i) => i.kind === "tool-use-input"));
 });
+
+// --- classification: injected context vs. what the user wrote ---
+import { splitUserMessage } from "../src/preamble.ts";
+
+test("user-authored markdown with the same heading is NOT treated as injected", () => {
+  // no Codex structure and no request marker -> a real message
+  const own = "# Files mentioned by the user:\n\nI am writing docs about this heading.";
+  assert.deepEqual(splitUserMessage("user", own), { meta: null, request: own });
+
+  const notes = "# Response annotations:\nmy own notes about annotating responses";
+  assert.equal(splitUserMessage("user", notes).meta, null);
+});
+
+test("Codex file-attachment injection is split from the user's request", () => {
+  const injected = [
+    "# Files mentioned by the user:",
+    "",
+    "## shot.png: C:/Users/me/AppData/Local/Temp/shot.png",
+    "",
+    "## My request for Codex:",
+    "why does this crash?",
+  ].join("\n");
+  const { meta, request } = splitUserMessage("user", injected);
+  assert.ok(meta?.startsWith("# Files mentioned"));
+  assert.ok(meta?.includes("shot.png"));
+  assert.equal(request, "why does this crash?");
+});
+
+test("response annotations require the Codex block to count as injected", () => {
+  const real = [
+    "# Response annotations:",
+    "Each item contains text selected from an earlier Codex response.",
+    "<response-annotations>",
+    '[{"text":"some quote"}]',
+    "</response-annotations>",
+    "",
+    "## My request for Codex:",
+    "please expand on that",
+  ].join("\n");
+  const { meta, request } = splitUserMessage("user", real);
+  assert.ok(meta?.includes("<response-annotations>"));
+  assert.equal(request, "please expand on that");
+});
+
+test("generic tags a user might paste are not treated as injected", () => {
+  for (const t of ["<instructions>do this</instructions>", "<root>xml</root>", "<div>hi</div>", "<payload>{}</payload>"]) {
+    assert.equal(splitUserMessage("user", t).meta, null, `${t} must stay a user message`);
+  }
+  // Codex-specific ones still are
+  assert.ok(splitUserMessage("user", "<environment_context><cwd>/p</cwd>").meta !== null);
+  assert.ok(splitUserMessage("developer", "anything at all").meta !== null);
+});
