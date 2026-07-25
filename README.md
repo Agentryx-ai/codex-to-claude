@@ -224,6 +224,11 @@ codex-to-claude import  [options] [--dry-run] [--force]
 codex-to-claude fix     [--dry-run]
 ```
 
+Pass flags to `node src/cli.ts`, not through `npm run`. npm has its own
+`--dry-run` and `--force` and consumes them, so `npm run import -- --dry-run`
+would import for real. It now refuses instead, and `npm run import:dry` has the
+flag baked in.
+
 `fix` cleans up transcripts that Claude duplicated. Opening an imported
 conversation makes Claude append the history it replayed, so every message
 shows twice. `fix` collapses that without re-converting. Messages you really
