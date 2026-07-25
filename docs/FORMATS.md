@@ -49,6 +49,8 @@ A conversation needs **two** artifacts. Writing only the transcript leaves it in
 
 `%APPDATA%/Claude/claude-code-sessions/<accountId>/<deviceId>/local_<uuid>.json`
 
+Windows only: this is the one path here observed on a single platform. `--sessions-root` overrides it.
+
 ```jsonc
 {
   "sessionId": "local_<uuid>",
