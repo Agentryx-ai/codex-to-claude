@@ -31,6 +31,7 @@ import {
   writeWrapperRecord,
 } from "./claude-desktop-target.ts";
 import { npmSwallowedFlags, npmSwallowedMessage } from "./npm-flags.ts";
+import { findContinuation } from "./continued.ts";
 import { validateTranscript } from "./validate.ts";
 import { fixTranscriptFile } from "./fix.ts";
 import type { SessionFilter } from "./types.ts";
@@ -364,11 +365,36 @@ function main(argv: string[]): number {
       // so a transcript that changed since we wrote it is left alone.
       const prior = lastRecordFor(history, s.sessionId);
       const state = inspectTarget(targetPath, prior?.targetSha256);
+
+      // "Changed since we wrote it" covers both a history Claude replayed into
+      // the file — which --force exists to get past — and messages the user sent
+      // afterwards, which nothing can bring back. Only the second is refused,
+      // and --force does not override it: the flag is for replay duplicates, not
+      // for discarding conversation.
+      const continued =
+        state === "modified" || state === "foreign"
+          ? findContinuation(targetPath, prior?.importedAtMs)
+          : null;
+      if (continued != null) {
+        conflicts += 1;
+        skipped += 1;
+        const when =
+          continued.firstAtMs != null
+            ? new Date(continued.firstAtMs).toISOString().replace("T", " ").slice(0, 16)
+            : "after the import";
+        process.stdout.write(
+          `skip  ${s.sessionId}  (${continued.turns} message(s) sent in Claude after the import)\n` +
+            `      first was ${when}: ${JSON.stringify(continued.firstText)}\n` +
+            `      re-importing would delete them. Move ${targetPath} aside first.\n`,
+        );
+        continue;
+      }
+
       if (force && (state === "modified" || state === "foreign")) {
         conflicts += 1;
         process.stdout.write(
           state === "modified"
-            ? `WARN  ${s.sessionId}  overwriting a transcript continued in Claude
+            ? `WARN  ${s.sessionId}  overwriting a transcript Claude rewrote (no messages of yours in it)
 `
             : `WARN  ${s.sessionId}  overwriting a transcript this tool did not write
 `,

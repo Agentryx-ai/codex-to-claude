@@ -17,6 +17,7 @@ Codex ships an import that pulls Claude sessions in. Nothing goes the other way,
 
 *Newest first.*
 
+- 🧷 **`--force` stops at your own messages** — it treated "Claude replayed the history into the file" and "you carried the conversation on" as the same thing, and overwrote both. It now tells them apart and refuses the second, naming the message it would have deleted. ([#9](https://github.com/Agentryx-ai/codex-to-claude/pull/9))
 - 🛑 **A dry run stays dry** — `npm run import -- --dry-run` used to import for real. npm owns `--dry-run` and `--force`, parses them as its own config and passes an empty argv on, so the flag never arrived and the write path ran. It now detects the swallowed flag and refuses; `npm run import:dry` has it baked in. ([#6](https://github.com/Agentryx-ai/codex-to-claude/pull/6))
 - 🧠 **Memory citations out of the reply** — when Codex answers from its memory files it appends an `<oai-mem-citation>` block, which Codex Desktop parses back out and never shows. Imports used to end an answer with raw markup; the citation is now a readable metadata line after the reply. ([#3](https://github.com/Agentryx-ai/codex-to-claude/pull/3))
 - 🏷️ **Titles the way Codex titles them** — Codex names the threads you start from the app and lists that name, not your opening message. Imports read those names from `~/.codex/session_index.jsonl`, so a conversation is called the same thing on both sides. ([#2](https://github.com/Agentryx-ai/codex-to-claude/pull/2))
@@ -146,8 +147,12 @@ This writes into another application's local data, so it stays cautious.
   wrote itself, and only with `--force`.
 - `--dry-run` prints every target path and writes nothing.
 - If you continued an imported conversation in Claude, the transcript changed
-  since the import and it is skipped, with a note. `--force` overrides that and
-  says what it overwrote.
+  since the import and it is skipped, with a note.
+- `--force` overrides that for a transcript Claude only rewrote — opening a
+  conversation makes it replay the history back into the file — and says what it
+  overwrote. It stops at a transcript holding messages you sent after the
+  import, naming the first one, and does not offer to override: the flag exists
+  to get past replay duplicates, not to discard conversation.
 - To undo an import, delete the transcripts and the `local_*.json` records it
   created. Both are listed in its output.
 - Prefer running with Claude Desktop closed.

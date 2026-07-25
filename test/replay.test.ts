@@ -6,6 +6,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { mapSessionToClaudeLines } from "../src/map.ts";
 import { loadCodexSessions } from "../src/codex-source.ts";
+import { findContinuation } from "../src/continued.ts";
 import { validateTranscript } from "../src/validate.ts";
 import { MISSING_RESULT_TEXT, repairTranscript } from "../src/repair.ts";
 import type { CodexSession } from "../src/types.ts";
@@ -345,4 +346,52 @@ test("full history mode marks the compaction point the way Claude expects", () =
   assert.deepEqual(validateTranscript(lines), []);
   // the chain stays linked across the marker
   for (let i = 1; i < lines.length; i++) assert.equal(lines[i].parentUuid, lines[i - 1].uuid);
+});
+
+test("messages sent after an import are told apart from a history Claude replayed", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "c2c-cont-"));
+  const p = path.join(dir, "t.jsonl");
+  const importedAtMs = Date.parse("2026-07-25T10:02:00Z");
+  const line = (o: Record<string, unknown>): string => JSON.stringify(o) + "\n";
+
+  // What this tool wrote: Codex turns, stamped long before the import.
+  const imported =
+    line({ type: "user", timestamp: "2026-07-13T20:52:48.835Z", message: { content: [{ type: "text", text: "git pull 해주세요" }] } }) +
+    line({ type: "assistant", timestamp: "2026-07-13T20:53:00.000Z", message: { content: [{ type: "text", text: "했습니다" }] } });
+  fs.writeFileSync(p, imported, "utf8");
+  assert.equal(findContinuation(p, importedAtMs), null, "nothing of the user's yet");
+
+  // Claude replays that history back into the file when the conversation is
+  // opened. The copies keep their original stamps, so they are not a
+  // continuation and --force may still overwrite.
+  fs.appendFileSync(p, imported, "utf8");
+  assert.equal(findContinuation(p, importedAtMs), null, "replayed history is not a continuation");
+
+  // Things that are not a typed message, all dated after the import.
+  fs.appendFileSync(
+    p,
+    line({ type: "assistant", timestamp: "2026-07-25T10:12:00Z", message: { content: [{ type: "text", text: "답변" }] } }) +
+      line({ type: "user", isMeta: true, timestamp: "2026-07-25T10:12:10Z", message: { content: [{ type: "text", text: "injected" }] } }) +
+      line({ type: "user", timestamp: "2026-07-25T10:12:20Z", message: { content: [{ type: "tool_result", tool_use_id: "c1", content: "out" }] } }) +
+      "{ not json\n",
+    "utf8",
+  );
+  assert.equal(findContinuation(p, importedAtMs), null, "only what the user typed counts");
+
+  // The real thing.
+  fs.appendFileSync(
+    p,
+    line({ type: "user", timestamp: "2026-07-25T10:12:47.583Z", message: { content: [{ type: "text", text: "지금까지  내용 정리좀" }] } }) +
+      line({ type: "user", timestamp: "2026-07-25T10:20:00Z", message: { content: "두 번째" } }),
+    "utf8",
+  );
+  const found = findContinuation(p, importedAtMs);
+  assert.ok(found);
+  assert.equal(found.turns, 2, "both shapes of user content count");
+  assert.equal(found.firstText, "지금까지 내용 정리좀");
+  assert.equal(found.firstAtMs, Date.parse("2026-07-25T10:12:47.583Z"));
+
+  // Nothing can be claimed without a file, or without knowing when we wrote it.
+  assert.equal(findContinuation(path.join(dir, "gone.jsonl"), importedAtMs), null);
+  assert.equal(findContinuation(p, undefined), null);
 });
