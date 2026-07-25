@@ -69,6 +69,11 @@ export interface CodexSession {
   model: string | null;
   messageCount: number;
   title: string;
+  /**
+   * The name Codex generated for the conversation and shows in its sidebar,
+   * when it has one. Absent for CLI threads, which Codex never names.
+   */
+  codexName?: string | null;
   /** Coarse source string from session_meta ("cli", "vscode", subagent JSON, ...). */
   source: string;
   /** True when this rollout is a spawned child (has parent_thread_id). */

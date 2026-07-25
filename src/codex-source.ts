@@ -5,6 +5,7 @@ import type { CodexSession, RolloutLine, SessionMeta } from "./types.ts";
 import { normalizeCwd } from "./paths.ts";
 import { loadDesktopThreads, loadThreadsByIds } from "./codex-db.ts";
 import { loadDesktopSelection, projectForCwd } from "./codex-desktop-state.ts";
+import { loadThreadNames, nameFromThreadRow } from "./codex-thread-names.ts";
 import { splitUserMessage } from "./preamble.ts";
 
 /** Recursively collect rollout .jsonl files under <codexHome>/sessions. */
@@ -251,6 +252,9 @@ export function loadDesktopSessions(
   opts: DesktopSelectOptions = {},
 ): DesktopSelectResult {
   const selection = loadDesktopSelection(codexHome);
+  const names = loadThreadNames(codexHome);
+  const nameFor = (r: { id: string; name: string | null; title: string; firstUserMessage: string | null }): string | null =>
+    names.get(r.id) ?? nameFromThreadRow(r);
 
   // Current Codex Desktop keeps no thread->project map: membership is the thread
   // index, and this file only says which projects exist and where they live.
@@ -263,6 +267,7 @@ export function loadDesktopSessions(
         const s = parseRollout(r.rolloutPath, opts);
         if (!s) continue;
         if (s.title === "" && r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
+        s.codexName = nameFor(r);
         if (r.source) s.source = r.source;
         const proj = selection.projectlessThreadIds.has(r.id)
           ? null
@@ -290,6 +295,7 @@ export function loadDesktopSessions(
         const s = parseRollout(r.rolloutPath, opts);
         if (!s) continue;
         if (s.title === "" && r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
+        s.codexName = nameFor(r);
         if (r.source) s.source = r.source;
         const proj = selection.threadProject.get(r.id) ?? null;
         s.projectName = proj?.name ?? "(no project)";
@@ -312,6 +318,7 @@ export function loadDesktopSessions(
       const s = parseRollout(r.rolloutPath, opts);
       if (!s) continue;
       if (s.title === "" && r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
+      s.codexName = nameFor(r);
       if (r.source) s.source = r.source;
       s.sandboxPolicy = r.sandboxPolicy;
       s.approvalMode = r.approvalMode;

@@ -119,6 +119,16 @@ Recents, and plenty of people never look at them, so membership is a filter:
 | reasoning effort | `effort` |
 | `event_msg`, `world_state` | dropped |
 
+### Conversation names
+
+Codex names conversations it starts from the app, and shows that name rather
+than the message you opened with — `git pull 해서 최신화하고 …handoff.md
+읽으세요` is listed as `최신화하고 문서 읽기`. Imports carry the name over, so
+a conversation is called the same thing on both sides.
+
+CLI conversations never get a name from Codex, and Codex lists them by their
+first message. Those import the same way, minus the injected boilerplate.
+
 ### Injected context
 
 Codex adds a lot of tooling boilerplate to conversations as ordinary user
