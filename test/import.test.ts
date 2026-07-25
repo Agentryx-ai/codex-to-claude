@@ -30,6 +30,8 @@ import {
 } from "../src/claude-desktop-target.ts";
 import { loadDesktopSelection, projectForCwd } from "../src/codex-desktop-state.ts";
 import { loadThreadNames, nameFromThreadRow } from "../src/codex-thread-names.ts";
+import { renderCitation, splitCitations } from "../src/citation.ts";
+import { validateTranscript } from "../src/validate.ts";
 import { encodeProjectDir } from "../src/paths.ts";
 import type { CodexSession } from "../src/types.ts";
 
@@ -424,4 +426,93 @@ test("an imported conversation is titled the way Codex titles it", () => {
   const unnamed = fixtureSession();
   assert.equal(mapSessionToClaudeLines(unnamed, { titlePrefix: "[Codex] " })[0].customTitle, "[Codex] hello codex");
   assert.equal(mapSessionToClaudeLines(unnamed)[0].customTitle, undefined);
+});
+
+test("Codex memory citations leave the reply and become metadata", () => {
+  const reply =
+    "그 변경분은 커밋하거나 패치로 따로 옮겨야 합니다.\n\n" +
+    "<oai-mem-citation>\n<citation_entries>\n" +
+    "MEMORY.md:1-10|note=[eagle-eye-clone HIL and physical-evidence context]\n" +
+    "MEMORY.md:46-53|note=[evidence artifact handling context]\n" +
+    "</citation_entries>\n<rollout_ids>\n019f4f03-c457-7043-a408-9b54025c6e0c\n</rollout_ids>\n" +
+    "</oai-mem-citation>";
+
+  const { body, citations } = splitCitations(reply);
+  assert.equal(body, "그 변경분은 커밋하거나 패치로 따로 옮겨야 합니다.");
+  assert.equal(citations.length, 1);
+  assert.equal(
+    citations[0],
+    "[codex-to-claude] Codex cited its memory here:\n" +
+      "  MEMORY.md:1-10 — eagle-eye-clone HIL and physical-evidence context\n" +
+      "  MEMORY.md:46-53 — evidence artifact handling context\n" +
+      "  conversation 019f4f03-c457-7043-a408-9b54025c6e0c",
+  );
+
+  // A reply without one is returned untouched.
+  assert.deepEqual(splitCitations("보통 답변"), { body: "보통 답변", citations: [] });
+  // An entry with no note still names its source.
+  assert.match(
+    renderCitation("<citation_entries>\nMEMORY.md:3\n</citation_entries>"),
+    /MEMORY\.md:3/,
+  );
+  // An envelope with nothing in it is not worth a line.
+  assert.equal(renderCitation("<citation_entries>\n</citation_entries>"), "");
+  assert.deepEqual(splitCitations("답변\n\n<oai-mem-citation>\n</oai-mem-citation>"), {
+    body: "답변",
+    citations: [],
+  });
+});
+
+test("a citation is emitted after the reply it belongs to, never inside it", () => {
+  const s = fixtureSession();
+  s.items = [
+    { tsMs: 1, payload: { type: "message", role: "user", content: [{ type: "input_text", text: "질문" }] } },
+    {
+      tsMs: 2,
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: [
+          {
+            type: "output_text",
+            text:
+              "답변입니다.\n\n<oai-mem-citation>\n<citation_entries>\n" +
+              "MEMORY.md:46-53|note=[evidence artifact handling context]\n" +
+              "</citation_entries>\n</oai-mem-citation>",
+          },
+        ],
+      },
+    },
+  ];
+  const lines = mapSessionToClaudeLines(s);
+  assert.equal(lines[1].type, "assistant");
+  assert.deepEqual(lines[1].message.content, [{ type: "text", text: "답변입니다." }]);
+  assert.equal(lines[2].isMeta, true);
+  assert.match((lines[2].message.content[0] as { text: string }).text, /MEMORY\.md:46-53/);
+  // The raw envelope is gone from the transcript entirely.
+  assert.equal(JSON.stringify(lines).includes("oai-mem-citation"), false);
+  assert.deepEqual(validateTranscript(lines), []);
+});
+
+test("a reply that is nothing but a citation does not leave an empty message", () => {
+  const s = fixtureSession();
+  s.items = [
+    { tsMs: 1, payload: { type: "message", role: "user", content: [{ type: "input_text", text: "질문" }] } },
+    {
+      tsMs: 2,
+      payload: {
+        type: "message",
+        role: "assistant",
+        content: [
+          {
+            type: "output_text",
+            text: "<oai-mem-citation>\n<citation_entries>\nMEMORY.md:1|note=[x]\n</citation_entries>\n</oai-mem-citation>",
+          },
+        ],
+      },
+    },
+  ];
+  const lines = mapSessionToClaudeLines(s);
+  for (const l of lines) assert.ok(l.message.content.length > 0, "no empty message content");
+  assert.deepEqual(validateTranscript(lines), []);
 });

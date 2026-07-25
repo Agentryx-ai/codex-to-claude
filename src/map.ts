@@ -5,6 +5,7 @@ import type {
   CodexSession,
 } from "./types.ts";
 import { splitUserMessage } from "./preamble.ts";
+import { splitCitations } from "./citation.ts";
 import { applyBudget, repairTranscript } from "./repair.ts";
 
 export interface MapOptions {
@@ -191,9 +192,19 @@ export function mapSessionToClaudeLines(
       const role = payload["role"];
       const text = textFromContent(payload["content"]);
       if (role === "assistant") {
-        if (text !== "") {
+        // Codex appends its memory citations to the reply as text. Claude has no
+        // citation form to map them onto, so they leave the message and become
+        // metadata rather than sitting in the prose as raw tags.
+        const { body, citations } = splitCitations(text);
+        if (body !== "") {
           if (assistantTsMs == null) assistantTsMs = tsMs;
-          assistantBuf.push({ type: "text", text });
+          assistantBuf.push({ type: "text", text: body });
+        }
+        if (citations.length > 0) {
+          flushAssistant();
+          for (const citation of citations) {
+            emit("user", [{ type: "text", text: citation }], tsMs, { isMeta: true });
+          }
         }
       } else {
         // user | developer | system -> user line.

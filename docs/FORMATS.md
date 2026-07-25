@@ -120,9 +120,39 @@ Titles resolve as `customTitle` → `aiTitle` → `lastPrompt` → `summary` →
 | `message` assistant | assistant message, grouped with the turn's tool calls |
 | `message` developer/system, or user text wrapped in a Codex tag (`<environment_context>`, `<instructions>`, `<recommended_plugins>`, `<skills_instructions>`, `<permissions …>`, `<collaboration_mode>`, `<app-context>`, `<codex_delegation>`, …) | user message with `isMeta: true` |
 | `<codex_delegation>` specifically | the wrapper stays `isMeta`, but its `<input>` becomes the user message — it is all a delegated thread has in place of a first prompt |
+| `<oai-mem-citation>` at the end of an assistant reply | a readable `isMeta` line after the reply — see below |
 | `reasoning` | `thinking` block (opt-in) |
 | `*_call` | `tool_use` block — `name` falls back to the item type; `input` is coerced to an object |
 | `*_output` | `tool_result` block — content falls back across `output` / `result` / `tools` / `content` |
+
+### Memory citations
+
+When Codex answers from its memory files it appends one block as the last thing in the reply, as instructed by a `developer` message ("Use this exact structure for programmatic parsing"):
+
+```
+<oai-mem-citation>
+<citation_entries>
+MEMORY.md:46-53|note=[evidence artifact handling context]
+</citation_entries>
+<rollout_ids>
+019f4f03-c457-7043-a408-9b54025c6e0c
+</rollout_ids>
+</oai-mem-citation>
+```
+
+It is not an item type. It arrives as plain text inside an assistant `output_text` block, and Codex Desktop parses it back out, so the tags are never on screen there.
+
+**Claude has no citation form to convert it into.** Transcript lines carry no citation field — the ones that exist are `firstPrompt`, `agentName`, `customTitle`, `aiTitle`, `summary`, `lastPrompt`, `gitBranch`, `relocated`, `isSidechain` — and the `citations` array the Messages API puts on text blocks has no renderer: in the bundled Claude Code 2.1.219 build the string appears only in Bedrock model definitions and in bundled API documentation. The known content-block types (`tool_use`, `mcp_tool_result`, `search_result`, `web_search_tool_result`, `tool_reference`, `compaction`, …) have no citation among them either.
+
+So it is treated like everything else that is real content authored by neither side: lifted out of the reply and re-emitted as an `isMeta` line, the shape sub-agent reports get.
+
+```
+[codex-to-claude] Codex cited its memory here:
+  MEMORY.md:46-53 — evidence artifact handling context
+  conversation 019f4f03-c457-7043-a408-9b54025c6e0c
+```
+
+The `developer` message that *defines* the format is untouched; it is already `isMeta`, and it is an instruction rather than a citation.
 
 ## Replay invariants
 
