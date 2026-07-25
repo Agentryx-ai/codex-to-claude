@@ -85,6 +85,8 @@ Observed on Windows and macOS; the Linux location follows Electron's convention 
 
 Only non-archived records are listed. The `<accountId>/<deviceId>` pair comes from `oauthAccount` in `~/.claude.json`; if that is missing it falls back to the directory with active records and the most recent activity. Existing records are never touched.
 
+`cliSessionId` is not a stable identity. Continuing an imported conversation makes Claude fork it into a session of its own and rewrite that field to point at the fork, after which the record no longer looks like one this tool wrote. `sessionId` — the record's own id, and its file name — does not change, so the import history remembers the records it wrote by that instead. A repointed record is Claude's conversation and is left alone; its transcript is at `projects/<projectKey>/<its cliSessionId>.jsonl`, which is where messages sent after the import will be.
+
 ### 2. Transcript (the content)
 
 `<claudeHome>/projects/<projectKey>/<cliSessionId>.jsonl`, where
