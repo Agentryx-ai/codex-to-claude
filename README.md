@@ -115,6 +115,7 @@ Recents, and plenty of people never look at them, so membership is a filter:
 | pasted screenshots | `image` |
 | `agent_message` | metadata line, prefixed with the sender |
 | injected context | metadata line |
+| memory citations | metadata line after the reply they belong to |
 | sandbox and approval policy | `permissionMode` |
 | reasoning effort | `effort` |
 | `event_msg`, `world_state` | dropped |
