@@ -29,6 +29,7 @@ import {
   recordsByCliSessionId,
   refreshWrapperRecord,
   setRecordTitle,
+  titleShowsCodexName,
   resolveDesktopSessionsRoot,
   writeWrapperRecord,
 } from "./claude-desktop-target.ts";
@@ -612,7 +613,14 @@ function main(argv: string[]): number {
         } catch {
           title = undefined;
         }
-        if (title != null && title !== entry.record.title) {
+        // A record already showing the name Codex shows is right, whatever the
+        // transcript says. Transcripts written before imports learned to read
+        // Codex's names hold the first message in customTitle, and re-syncing
+        // from one of those would put the paragraph back over the name — the
+        // downgrade the naming work exists to prevent. The prefix stays with
+        // the record, since `fix` is not told which one an import used.
+        const named = titleShowsCodexName(entry.record.title, session.codexName);
+        if (title != null && title !== entry.record.title && !named) {
           retitled += 1;
           process.stdout.write(
             `retitle ${JSON.stringify(String(entry.record.title).slice(0, 36))}` +
