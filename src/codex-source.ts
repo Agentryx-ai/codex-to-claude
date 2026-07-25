@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { CodexSession, RolloutLine, SessionMeta } from "./types.ts";
 import { normalizeCwd } from "./paths.ts";
 import { loadDesktopThreads, loadThreadsByIds } from "./codex-db.ts";
-import { loadDesktopSelection } from "./codex-desktop-state.ts";
+import { loadDesktopSelection, projectForCwd } from "./codex-desktop-state.ts";
 import { splitUserMessage } from "./preamble.ts";
 
 /** Recursively collect rollout .jsonl files under <codexHome>/sessions. */
@@ -236,10 +236,12 @@ export interface DesktopSelectResult {
 /**
  * Select the conversations Codex Desktop shows in its left sidebar.
  *
- * Preferred ("desktop"): read Codex Desktop's UI state (.codex-global-state.json)
- * for the exact sidebar membership — threads assigned to a registered project plus
- * projectless threads — and keep the non-archived ones (archived/rollout_path/title
- * come from state_*.sqlite). This matches the Desktop list exactly.
+ * Preferred ("desktop"): read Codex Desktop's UI state (.codex-global-state.json).
+ * Older Desktop builds record an explicit thread->project assignment map, which is
+ * the sidebar membership verbatim. Current builds do not: projects are registered
+ * with root paths, and membership is the thread index grouped by cwd. Both end up
+ * with the same thing — non-archived top-level threads, tagged with their project.
+ * (archived/rollout_path/title come from state_*.sqlite).
  *
  * Fallbacks: ("db") replicate the listThreads filter over the whole threads table;
  * ("scan") scan rollout files with the equivalent semantic filter.
@@ -249,7 +251,35 @@ export function loadDesktopSessions(
   opts: DesktopSelectOptions = {},
 ): DesktopSelectResult {
   const selection = loadDesktopSelection(codexHome);
-  if (selection) {
+
+  // Current Codex Desktop keeps no thread->project map: membership is the thread
+  // index, and this file only says which projects exist and where they live.
+  if (selection && selection.mode === "derived") {
+    const rows = loadDesktopThreads(codexHome, opts);
+    if (rows) {
+      const sessions: CodexSession[] = [];
+      for (const r of rows) {
+        if (!r.rolloutPath) continue;
+        const s = parseRollout(r.rolloutPath, opts);
+        if (!s) continue;
+        if (s.title === "" && r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
+        if (r.source) s.source = r.source;
+        const proj = selection.projectlessThreadIds.has(r.id)
+          ? null
+          : projectForCwd(selection, r.cwd || s.cwdOriginal || s.cwd);
+        s.projectName = proj?.name ?? "(no project)";
+        s.hasProject = proj != null;
+        s.isArchived = r.archived;
+        s.sandboxPolicy = r.sandboxPolicy;
+        s.approvalMode = r.approvalMode;
+        s.reasoningEffort = r.reasoningEffort;
+        sessions.push(s);
+      }
+      return { via: "desktop", sessions };
+    }
+  }
+
+  if (selection && selection.mode === "assigned") {
     const ids = [...selection.threadProject.keys()];
     const rows = loadThreadsByIds(codexHome, ids, opts);
     if (rows) {

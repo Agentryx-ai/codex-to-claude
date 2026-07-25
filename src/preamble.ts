@@ -51,13 +51,23 @@ const INJECTED_HEADINGS: Array<{ heading: string; corroborate: RegExp }> = [
     corroborate: /<response-annotations>/,
   },
   {
-    heading: "# AGENTS.md instructions for",
+    // Older Codex writes "# AGENTS.md instructions for <path>", current builds
+    // just "# AGENTS.md instructions"; the <INSTRUCTIONS> block corroborates both.
+    heading: "# AGENTS.md instructions",
     corroborate: /<INSTRUCTIONS>/,
   },
 ];
 
 /** Marks the start of the user's own message inside a wrapped injection. */
 const REQUEST_MARKER = /^##\s*My request for Codex:\s*$/m;
+
+/**
+ * A thread Codex Desktop started by delegating from another one. The wrapper is
+ * plumbing, but `<input>` is the task text and is the only thing the thread has
+ * in place of a first user message — dropping it leaves the conversation with no
+ * user content at all, and it stops being importable.
+ */
+const DELEGATION_INPUT = /<input>([\s\S]*?)<\/input>/;
 
 export interface SplitMessage {
   /** Injected context, if any. */
@@ -120,6 +130,17 @@ export function splitUserMessage(role: string, text: string): SplitMessage {
     return { meta: trimmed, request: null };
   }
 
-  if (isInjectedContext(role, trimmed)) return { meta: trimmed, request: null };
+  if (isInjectedContext(role, trimmed)) {
+    if (leadingTag(trimmed) === "codex_delegation") {
+      const m = DELEGATION_INPUT.exec(trimmed);
+      const request = m ? m[1].trim() : "";
+      // The wrapper is kept as metadata, but with the task text lifted out of it
+      // rather than repeated in both lines.
+      if (request !== "") {
+        return { meta: trimmed.replace(DELEGATION_INPUT, "<input/>"), request };
+      }
+    }
+    return { meta: trimmed, request: null };
+  }
   return { meta: null, request: trimmed };
 }

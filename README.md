@@ -5,7 +5,7 @@ Import your Codex conversations into Claude Desktop and Claude Code.
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A522.6-brightgreen.svg)](https://nodejs.org)
 [![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen.svg)](./package.json)
-[![Platform](https://img.shields.io/badge/platform-Windows-blue.svg)](#install)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue.svg)](#install)
 
 ```console
 $ codex-to-claude list
@@ -68,10 +68,13 @@ appear:
 
 | Layer | Location | Role |
 | --- | --- | --- |
-| Session record | `%APPDATA%/Claude/claude-code-sessions/<account>/<device>/local_<uuid>.json` | Builds the conversation list. Points at a transcript by `cliSessionId` and `cwd`. |
+| Session record | `<app-data>/Claude/claude-code-sessions/<account>/<device>/local_<uuid>.json` | Builds the conversation list. Points at a transcript by `cliSessionId` and `cwd`. |
 | Transcript | `~/.claude/projects/<encoded-cwd>/<cliSessionId>.jsonl` | The conversation itself. |
 
-Writing only a transcript leaves it invisible, so this writes both.
+Writing only a transcript leaves it invisible, so this writes both. `<app-data>`
+is `%APPDATA%` on Windows, `~/Library/Application Support` on macOS and
+`$XDG_CONFIG_HOME` (or `~/.config`) on Linux. When more than one account has
+records on disk, the one Claude Code is signed in to wins.
 
 ```
 ~/.codex/sessions/**/rollout-*.jsonl
@@ -188,14 +191,13 @@ repaired:
 
 ## Install
 
-Windows, and Node.js 22.6 or newer. No dependencies.
+Windows or macOS, and Node.js 22.6 or newer. No dependencies.
 
-macOS and Linux are not supported yet. The conversion itself is
-platform-independent, but the Claude Desktop session-record location is read
-from `%APPDATA%`, which only exists on Windows, so registration would write to
-the wrong place. Everything else (`~/.codex`, `~/.claude`) resolves normally.
-Passing `--sessions-root` and `--claude-home` explicitly is the closest thing to
-a workaround, and none of it has been run there.
+Every path resolves per platform: the Claude Desktop session-record store from
+`%APPDATA%`, `~/Library/Application Support` or `$XDG_CONFIG_HOME`, and
+`~/.codex` and `~/.claude` from the home directory. Linux follows the same rules
+but has not been run there; `--sessions-root` and `--claude-home` override any
+of it.
 
 ```bash
 git clone https://github.com/Agentryx-ai/codex-to-claude
@@ -251,8 +253,8 @@ This writes into another application's local data, so it stays cautious.
 
 - Built on undocumented internals of two proprietary desktop apps. They can
   change at any time.
-- Windows only. Tested on Windows 11 and nowhere else; macOS and Linux need a
-  platform-aware session-record path first (see [Install](#install)).
+- Tested on Windows 11 and macOS 26. Linux resolves the same way but has not
+  been run there.
 - Codex encrypts its compaction summaries, so an import shows where compaction
   happened but not what it said.
 - Sub-agent threads arrive as messages, not as separate threads.

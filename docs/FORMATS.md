@@ -37,7 +37,7 @@ Calls and results are flat and paired by `call_id`, not nested.
 
 Not every rollout is a conversation in the sidebar. Sub-agent threads, `codex exec` automation runs and archived threads all live in the same directory. It resolves the list from Codex's own state, in this order:
 
-1. `~/.codex/.codex-global-state.json` — `thread-project-assignments` (threads belonging to a registered project) plus `projectless-thread-ids`. This is the sidebar's membership.
+1. `~/.codex/.codex-global-state.json` — the sidebar's grouping, in one of two shapes. Older builds record `thread-project-assignments` (thread → project) plus `projectless-thread-ids`, which together *are* the membership. Current builds drop the assignment map: projects are registered under `local-projects` with `rootPaths`, and a thread belongs to whichever project's root contains its `cwd` (longest match), so membership comes from the index below and this file only supplies the names.
 2. `~/.codex/state_<n>.sqlite` — `threads` (`archived`, `rollout_path`, `title`, `cwd`, `source`, `recency_at_ms`) and `thread_spawn_edges` (parent → child). Used to drop archived and spawned threads, and to resolve each thread's rollout file.
 3. Rollout-file scan, applying the equivalent rules from `session_meta` (`parent_thread_id`, `source`), when neither is available.
 
@@ -47,9 +47,11 @@ A conversation needs **two** artifacts. Writing only the transcript leaves it in
 
 ### 1. Session record (what the list is built from)
 
-`%APPDATA%/Claude/claude-code-sessions/<accountId>/<deviceId>/local_<uuid>.json`
+`<app-data>/Claude/claude-code-sessions/<accountId>/<deviceId>/local_<uuid>.json`
 
-Windows only: this is the one path here observed on a single platform. `--sessions-root` overrides it.
+`<app-data>` is `%APPDATA%` (Windows), `~/Library/Application Support` (macOS) or `$XDG_CONFIG_HOME`, default `~/.config` (Linux) — Electron's `app.getPath("userData")`.
+
+Observed on Windows and macOS; the Linux location follows Electron's convention but has not been checked. `--sessions-root` overrides it.
 
 ```jsonc
 {
@@ -67,7 +69,7 @@ Windows only: this is the one path here observed on a single platform. `--sessio
 }
 ```
 
-Only non-archived records are listed. It picks the `<accountId>/<deviceId>` directory with active records and the most recent activity, and never touches existing records.
+Only non-archived records are listed. The `<accountId>/<deviceId>` pair comes from `oauthAccount` in `~/.claude.json`; if that is missing it falls back to the directory with active records and the most recent activity. Existing records are never touched.
 
 ### 2. Transcript (the content)
 
@@ -103,6 +105,7 @@ Titles resolve as `customTitle` → `aiTitle` → `lastPrompt` → `summary` →
 | `message` user | user message |
 | `message` assistant | assistant message, grouped with the turn's tool calls |
 | `message` developer/system, or user text wrapped in a Codex tag (`<environment_context>`, `<instructions>`, `<recommended_plugins>`, `<skills_instructions>`, `<permissions …>`, `<collaboration_mode>`, `<app-context>`, `<codex_delegation>`, …) | user message with `isMeta: true` |
+| `<codex_delegation>` specifically | the wrapper stays `isMeta`, but its `<input>` becomes the user message — it is all a delegated thread has in place of a first prompt |
 | `reasoning` | `thinking` block (opt-in) |
 | `*_call` | `tool_use` block — `name` falls back to the item type; `input` is coerced to an object |
 | `*_output` | `tool_result` block — content falls back across `output` / `result` / `tools` / `content` |

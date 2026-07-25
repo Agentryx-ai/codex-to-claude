@@ -19,9 +19,11 @@ import {
 } from "./claude-target.ts";
 import {
   buildWrapperRecord,
+  countWorkspaceDirs,
   existingCliSessionIds,
   findActiveWorkspaceDir,
   findRecordFor,
+  signedInWorkspaceDir,
   recordsByCliSessionId,
   refreshWrapperRecord,
   setRecordTitle,
@@ -244,7 +246,25 @@ function main(argv: string[]): number {
     const sessionsRoot = resolveDesktopSessionsRoot(
       values["sessions-root"] as string | undefined,
     );
-    const workspaceDir = register ? findActiveWorkspaceDir(sessionsRoot) : null;
+    // Records live under <accountId>/<deviceId>. Ask Claude Code which account
+    // is signed in rather than guessing, so a stale second account's directory
+    // cannot swallow the import.
+    const workspaceDir = register
+      ? (signedInWorkspaceDir(sessionsRoot, claudeHome) ??
+        findActiveWorkspaceDir(sessionsRoot))
+      : null;
+    if (
+      register &&
+      workspaceDir != null &&
+      signedInWorkspaceDir(sessionsRoot, claudeHome) == null &&
+      countWorkspaceDirs(sessionsRoot) > 1
+    ) {
+      process.stderr.write(
+        `WARNING: several Claude accounts have session records and the signed-in one\n` +
+          `could not be determined; guessing ${workspaceDir}.\n` +
+          `Pass --sessions-root <dir> if the import lands under the wrong account.\n\n`,
+      );
+    }
     const alreadyRegistered =
       workspaceDir != null ? existingCliSessionIds(workspaceDir) : new Set<string>();
     if (register && workspaceDir == null) {
@@ -457,9 +477,12 @@ function main(argv: string[]): number {
     }
     // A record can drift from the transcript it points at: a title corrected in
     // a later version otherwise only reaches the list on a full re-import.
-    const wsDir = findActiveWorkspaceDir(
-      resolveDesktopSessionsRoot(values["sessions-root"] as string | undefined),
+    const fixSessionsRoot = resolveDesktopSessionsRoot(
+      values["sessions-root"] as string | undefined,
     );
+    const wsDir =
+      signedInWorkspaceDir(fixSessionsRoot, claudeHome) ??
+      findActiveWorkspaceDir(fixSessionsRoot);
     let retitled = 0;
     let orphaned = 0;
     if (wsDir != null) {

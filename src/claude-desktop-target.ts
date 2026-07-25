@@ -2,7 +2,9 @@
 //
 // Claude Desktop (Code) does NOT list ~/.claude/projects/*.jsonl directly. Its
 // conversation list is built from "wrapper records" under
-//   %APPDATA%/Claude/claude-code-sessions/<accountId>/<deviceId>/local_<uuid>.json
+//   <userData>/Claude/claude-code-sessions/<accountId>/<deviceId>/local_<uuid>.json
+// where <userData> is %APPDATA% on Windows, ~/Library/Application Support on
+// macOS and $XDG_CONFIG_HOME (or ~/.config) on Linux.
 // Each record points at a transcript via `cliSessionId` + `cwd`
 // (transcript path = <claudeHome>/projects/<cwd.replace(/[^a-zA-Z0-9]/g,"-")>/<cliSessionId>.jsonl).
 //
@@ -36,13 +38,86 @@ export interface WrapperRecord {
   spawnSeed: Record<string, unknown>;
 }
 
+/**
+ * Claude Desktop's Electron user-data directory, which is where
+ * `claude-code-sessions` lives. Electron's `app.getPath("userData")` resolves
+ * per platform, so this has to as well — on macOS the Windows %APPDATA% layout
+ * does not exist and the records would silently never be found.
+ */
+export function resolveDesktopDataDir(): string {
+  const home = os.homedir();
+  if (process.platform === "darwin") {
+    return path.join(home, "Library", "Application Support", "Claude");
+  }
+  if (process.platform === "win32") {
+    const appData =
+      process.env.APPDATA?.trim() || path.join(home, "AppData", "Roaming");
+    return path.join(appData, "Claude");
+  }
+  const xdg = process.env.XDG_CONFIG_HOME?.trim();
+  return path.join(xdg && xdg !== "" ? xdg : path.join(home, ".config"), "Claude");
+}
+
 /** Default root of Claude Desktop's session-record store. */
 export function resolveDesktopSessionsRoot(override?: string): string {
   if (override && override.trim() !== "") return path.resolve(override);
-  const appData =
-    process.env.APPDATA?.trim() ||
-    path.join(os.homedir(), "AppData", "Roaming");
-  return path.join(appData, "Claude", "claude-code-sessions");
+  return path.join(resolveDesktopDataDir(), "claude-code-sessions");
+}
+
+/**
+ * The account Claude Code is signed in to, as <accountId>/<deviceId> — which is
+ * exactly the directory layout under `claude-code-sessions`. Reading it beats
+ * guessing from file counts when more than one account has records on disk.
+ */
+export function signedInWorkspaceDir(
+  sessionsRoot: string,
+  claudeHome: string,
+): string | null {
+  const candidates = [
+    path.join(claudeHome, ".claude.json"),
+    path.join(os.homedir(), ".claude.json"),
+  ];
+  for (const p of candidates) {
+    let account: { accountUuid?: unknown; organizationUuid?: unknown } | undefined;
+    try {
+      account = (
+        JSON.parse(fs.readFileSync(p, "utf8")) as {
+          oauthAccount?: { accountUuid?: unknown; organizationUuid?: unknown };
+        }
+      ).oauthAccount;
+    } catch {
+      continue;
+    }
+    const a = account?.accountUuid;
+    const o = account?.organizationUuid;
+    if (typeof a !== "string" || typeof o !== "string" || a === "" || o === "") continue;
+    const dir = path.join(sessionsRoot, a, o);
+    if (safeIsDir(dir)) return dir;
+  }
+  return null;
+}
+
+/** How many <accountId>/<deviceId> directories hold records at all. */
+export function countWorkspaceDirs(sessionsRoot: string): number {
+  let n = 0;
+  let accounts: string[];
+  try {
+    accounts = fs.readdirSync(sessionsRoot);
+  } catch {
+    return 0;
+  }
+  for (const a of accounts) {
+    const pa = path.join(sessionsRoot, a);
+    if (!safeIsDir(pa)) continue;
+    for (const b of fs.readdirSync(pa)) {
+      const pb = path.join(pa, b);
+      if (!safeIsDir(pb)) continue;
+      if (fs.readdirSync(pb).some((f) => f.startsWith("local_") && f.endsWith(".json"))) {
+        n += 1;
+      }
+    }
+  }
+  return n;
 }
 
 /**
