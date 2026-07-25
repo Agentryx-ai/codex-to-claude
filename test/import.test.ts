@@ -12,7 +12,7 @@ import {
 } from "../src/codex-source.ts";
 import { applyFilter } from "../src/filter.ts";
 import { mapSessionToClaudeLines } from "../src/map.ts";
-import { isInjectedContext } from "../src/preamble.ts";
+import { isInjectedContext, splitUserMessage } from "../src/preamble.ts";
 import {
   alreadyImported,
   loadImportHistory,
@@ -22,6 +22,13 @@ import {
   targetPathFor,
   writeTranscript,
 } from "../src/claude-target.ts";
+import {
+  countWorkspaceDirs,
+  findActiveWorkspaceDir,
+  resolveDesktopSessionsRoot,
+  signedInWorkspaceDir,
+} from "../src/claude-desktop-target.ts";
+import { loadDesktopSelection, projectForCwd } from "../src/codex-desktop-state.ts";
 import { encodeProjectDir } from "../src/paths.ts";
 import type { CodexSession } from "../src/types.ts";
 
@@ -228,4 +235,128 @@ test("isInjectedContext classifies Codex preamble tags", () => {
   assert.equal(isInjectedContext("user", "<codex_delegation>"), true);
   assert.equal(isInjectedContext("user", "just a question"), false);
   assert.equal(isInjectedContext("user", "<div> not a codex tag"), false);
+});
+
+test("AGENTS.md injection is meta whether or not the heading names a path", () => {
+  const withPath = "# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>\nbe brief\n</INSTRUCTIONS>";
+  const bare = "# AGENTS.md instructions\n\n<INSTRUCTIONS>\nbe brief\n</INSTRUCTIONS>";
+  assert.equal(isInjectedContext("user", withPath), true);
+  assert.equal(isInjectedContext("user", bare), true);
+  // the heading on its own stays the user's, without Codex's structure
+  assert.equal(isInjectedContext("user", "# AGENTS.md instructions\n\nwhat do they say?"), false);
+});
+
+test("a delegated thread keeps the delegated task as its user message", () => {
+  const text =
+    "<codex_delegation>\n  <source_thread_id>abc</source_thread_id>\n" +
+    "  <input>MySQL 데이터 디렉터리를 복구해 주세요</input>\n</codex_delegation>";
+  const { meta, request } = splitUserMessage("user", text);
+  assert.equal(request, "MySQL 데이터 디렉터리를 복구해 주세요");
+  assert.ok(meta != null && meta.includes("<input/>"), "wrapper is kept, task text is not repeated");
+  assert.ok(!meta.includes("복구해"), "task text must not appear twice");
+
+  // ...and that makes the thread importable, with a usable title.
+  const s = fixtureSession();
+  s.items = [
+    { tsMs: 1, payload: { type: "message", role: "user", content: [{ type: "input_text", text }] } },
+    { tsMs: 2, payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "ok" }] } },
+  ];
+  const lines = mapSessionToClaudeLines(s, { titlePrefix: "[Codex] " });
+  assert.equal(lines[0].isMeta, true);
+  assert.equal(lines[1].isMeta, undefined);
+  assert.equal(lines[0].customTitle, "[Codex] MySQL 데이터 디렉터리를 복구해 주세요");
+});
+
+test("Claude Desktop's session-record root follows the platform", () => {
+  const original = process.platform;
+  const set = (p: string) => Object.defineProperty(process, "platform", { value: p, configurable: true });
+  try {
+    set("darwin");
+    assert.equal(
+      resolveDesktopSessionsRoot(),
+      path.join(os.homedir(), "Library", "Application Support", "Claude", "claude-code-sessions"),
+    );
+    set("win32");
+    assert.ok(
+      resolveDesktopSessionsRoot().endsWith(path.join("Claude", "claude-code-sessions")),
+    );
+    assert.ok(resolveDesktopSessionsRoot().includes(process.env.APPDATA?.trim() || "AppData"));
+    set("linux");
+    const xdg = process.env.XDG_CONFIG_HOME?.trim();
+    assert.equal(
+      resolveDesktopSessionsRoot(),
+      path.join(xdg && xdg !== "" ? xdg : path.join(os.homedir(), ".config"), "Claude", "claude-code-sessions"),
+    );
+  } finally {
+    set(original);
+  }
+});
+
+test("the signed-in account decides which session-record directory is used", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cc-sessions-"));
+  const claudeHome = fs.mkdtempSync(path.join(os.tmpdir(), "cc-home-"));
+  const stale = path.join(root, "stale-account", "stale-device");
+  const mine = path.join(root, "my-account", "my-org");
+  for (const d of [stale, mine]) fs.mkdirSync(d, { recursive: true });
+  // The stale account has more records, so a count-based guess would pick it.
+  for (let i = 0; i < 3; i++) {
+    fs.writeFileSync(path.join(stale, `local_${i}.json`), JSON.stringify({ cliSessionId: `s${i}` }));
+  }
+  fs.writeFileSync(path.join(mine, "local_a.json"), JSON.stringify({ cliSessionId: "a" }));
+  fs.writeFileSync(
+    path.join(claudeHome, ".claude.json"),
+    JSON.stringify({ oauthAccount: { accountUuid: "my-account", organizationUuid: "my-org" } }),
+  );
+
+  assert.equal(countWorkspaceDirs(root), 2);
+  assert.equal(signedInWorkspaceDir(root, claudeHome), mine);
+  assert.equal(findActiveWorkspaceDir(root), stale, "the guess alone would land on the wrong account");
+});
+
+test("current Codex Desktop state groups by project root, not by an assignment map", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "codex-state-"));
+  fs.writeFileSync(
+    path.join(home, ".codex-global-state.json"),
+    JSON.stringify({
+      "local-projects": {
+        p1: { id: "p1", name: "eagle", rootPaths: ["/home/u/work"] },
+        p2: { id: "p2", name: "eagle-web", rootPaths: ["/home/u/work/web"] },
+      },
+      "project-order": ["p1", "p2"],
+      "projectless-thread-ids": ["t-loose"],
+    }),
+  );
+  const sel = loadDesktopSelection(home);
+  assert.ok(sel);
+  assert.equal(sel.mode, "derived", "no assignment map -> membership must come from the index");
+  assert.equal(sel.projects.size, 2);
+  assert.ok(sel.projectlessThreadIds.has("t-loose"));
+
+  assert.equal(projectForCwd(sel, "/home/u/work")?.name, "eagle");
+  assert.equal(projectForCwd(sel, "/home/u/work/src/app")?.name, "eagle");
+  // nested roots: the longest match wins, as it does in the sidebar
+  assert.equal(projectForCwd(sel, "/home/u/work/web/ui")?.name, "eagle-web");
+  // a sibling directory that merely shares a prefix is not inside the project
+  assert.equal(projectForCwd(sel, "/home/u/workshop"), null);
+  assert.equal(projectForCwd(sel, "/home/u/other"), null);
+  assert.equal(projectForCwd(sel, ""), null);
+});
+
+test("an older Desktop state with an assignment map still drives selection directly", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "codex-state-"));
+  fs.writeFileSync(
+    path.join(home, ".codex-global-state.json"),
+    JSON.stringify({
+      "local-projects": { p1: { id: "p1", name: "eagle", rootPaths: ["c:\\work"] } },
+      "thread-project-assignments": { "t-1": { projectId: "p1" } },
+      "projectless-thread-ids": ["t-2"],
+    }),
+  );
+  const sel = loadDesktopSelection(home);
+  assert.ok(sel);
+  assert.equal(sel.mode, "assigned");
+  assert.equal(sel.threadProject.get("t-1")?.name, "eagle");
+  assert.equal(sel.threadProject.get("t-2"), null);
+  // Windows roots still match despite drive-letter case and separators
+  assert.equal(projectForCwd(sel, "C:\\work\\repo")?.name, "eagle");
 });
