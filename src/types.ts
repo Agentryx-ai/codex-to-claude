@@ -184,6 +184,16 @@ export interface ImportHistoryRecord {
   projectRoot: string;
   /** sha256 of the transcript this tool wrote, to detect later edits by Claude. */
   targetSha256?: string;
+  /**
+   * `sessionId` of every Claude Desktop session record this tool wrote for this
+   * conversation — the record's own id, which is also its file name.
+   *
+   * Records are keyed by `cliSessionId` in the list, but Claude repoints that
+   * field at a session of its own once the conversation is continued, and then
+   * nothing identifies the record as ours. Remembering the id it was written
+   * under is the only way to recognise it afterwards.
+   */
+  recordSessionIds?: string[];
 }
 export interface ImportHistory {
   version: 1;

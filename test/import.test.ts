@@ -20,6 +20,7 @@ import {
   saveImportHistory,
   sha256File,
   targetPathFor,
+  transcriptPathFor,
   writeTranscript,
 } from "../src/claude-target.ts";
 import {
@@ -27,6 +28,8 @@ import {
   findActiveWorkspaceDir,
   resolveDesktopSessionsRoot,
   signedInWorkspaceDir,
+  ourRecords,
+  readRecord,
 } from "../src/claude-desktop-target.ts";
 import { loadDesktopSelection, projectForCwd } from "../src/codex-desktop-state.ts";
 import { loadThreadNames, nameFromThreadRow } from "../src/codex-thread-names.ts";
@@ -515,4 +518,37 @@ test("a reply that is nothing but a citation does not leave an empty message", (
   const lines = mapSessionToClaudeLines(s);
   for (const l of lines) assert.ok(l.message.content.length > 0, "no empty message content");
   assert.deepEqual(validateTranscript(lines), []);
+});
+
+test("records this tool wrote stay recognisable after Claude repoints them", () => {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), "cc-ws-"));
+  const write = (sessionId: string, cliSessionId: string, cwd = "/repo"): void => {
+    fs.writeFileSync(
+      path.join(ws, `${sessionId}.json`),
+      JSON.stringify({ sessionId, cliSessionId, cwd, title: sessionId }),
+    );
+  };
+  write("local_mine", "codex-1");
+  // Continuing an imported conversation makes Claude fork it and repoint the
+  // record at a session of its own. The record's own id does not change.
+  write("local_forked", "claude-fork-1");
+  // Claude's own conversations are not in our history and are never considered.
+  write("local_theirs", "claude-2");
+
+  const owned = ourRecords(ws, ["local_mine", "local_forked", "local_gone"], "codex-1");
+  assert.equal(owned.current?.record.sessionId, "local_mine");
+  assert.deepEqual(owned.repointed.map((r) => r.record.sessionId), ["local_forked"]);
+
+  // A record we never wrote is invisible even when it exists.
+  assert.deepEqual(ourRecords(ws, [], "codex-1"), { current: null, repointed: [] });
+  // A deleted record is simply gone, not an error.
+  assert.equal(readRecord(ws, "local_gone"), null);
+  assert.equal(readRecord(ws, "local_theirs")?.record.cliSessionId, "claude-2");
+
+  // The fork's transcript is where its messages are, and it is findable from
+  // the record alone — no Codex session names it.
+  assert.equal(
+    transcriptPathFor("/claude", "/repo", "claude-fork-1"),
+    path.join("/claude", "projects", "-repo", "claude-fork-1.jsonl"),
+  );
 });

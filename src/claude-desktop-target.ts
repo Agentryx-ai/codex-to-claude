@@ -188,6 +188,54 @@ export function existingCliSessionIds(workspaceDir: string): Set<string> {
 }
 
 /**
+ * Read back a record this tool wrote, by the `sessionId` it was written under.
+ *
+ * `cliSessionId` cannot be used for this: Claude repoints it at a session of its
+ * own once the conversation is continued, and the record stops looking like
+ * ours. The record's own id is stable — it is the file name — so it survives
+ * that, and it is what tells "still registered for the import" apart from "now
+ * Claude's, leave it alone".
+ */
+export function readRecord(
+  workspaceDir: string,
+  sessionId: string,
+): { path: string; record: WrapperRecord } | null {
+  const p = path.join(workspaceDir, `${sessionId}.json`);
+  try {
+    return { path: p, record: JSON.parse(fs.readFileSync(p, "utf8")) as WrapperRecord };
+  } catch {
+    return null; // deleted, or never ours
+  }
+}
+
+export interface OwnedRecords {
+  /** A record we wrote that still points at the imported transcript. */
+  current: { path: string; record: WrapperRecord } | null;
+  /**
+   * Records we wrote that Claude has since repointed at a session of its own —
+   * it forks an imported conversation when it is continued. These belong to
+   * Claude now and hold whatever was said in them, so they are never rewritten.
+   */
+  repointed: Array<{ path: string; record: WrapperRecord }>;
+}
+
+/** Sort the records this tool wrote for one conversation into still-ours and gone. */
+export function ourRecords(
+  workspaceDir: string,
+  recordSessionIds: readonly string[],
+  cliSessionId: string,
+): OwnedRecords {
+  const out: OwnedRecords = { current: null, repointed: [] };
+  for (const id of recordSessionIds) {
+    const entry = readRecord(workspaceDir, id);
+    if (entry == null) continue;
+    if (entry.record.cliSessionId === cliSessionId) out.current ??= entry;
+    else out.repointed.push(entry);
+  }
+  return out;
+}
+
+/**
  * Locate a record pointing at a given transcript. Used to refresh a record this
  * tool created earlier; records created by Claude itself are never touched,
  * because their cliSessionId is Claude's own and never matches an imported one.

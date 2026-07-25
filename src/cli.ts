@@ -15,6 +15,7 @@ import {
   saveImportHistory,
   sha256File,
   targetPathFor,
+  transcriptPathFor,
   writeTranscript,
 } from "./claude-target.ts";
 import {
@@ -23,6 +24,7 @@ import {
   existingCliSessionIds,
   findActiveWorkspaceDir,
   findRecordFor,
+  ourRecords,
   signedInWorkspaceDir,
   recordsByCliSessionId,
   refreshWrapperRecord,
@@ -317,6 +319,15 @@ function main(argv: string[]): number {
             });
             writeWrapperRecord(workspaceDir, record);
             alreadyRegistered.add(s.sessionId);
+            // Remember it here too, or a later run cannot tell this record from
+            // one Claude made once Claude repoints it.
+            const seen = lastRecordFor(history, s.sessionId);
+            if (seen != null) {
+              seen.recordSessionIds = [
+                ...(seen.recordSessionIds ?? []),
+                record.sessionId,
+              ];
+            }
             registered += 1;
             process.stdout.write(
               `skip  ${s.sessionId}  (already imported) — registered\n`,
@@ -371,10 +382,25 @@ function main(argv: string[]): number {
       // afterwards, which nothing can bring back. Only the second is refused,
       // and --force does not override it: the flag is for replay duplicates, not
       // for discarding conversation.
-      const continued =
+      // Claude does not always continue in place: it can fork an imported
+      // conversation into a session of its own and repoint the record we wrote
+      // at the fork. The messages are then in a file no Codex session names, so
+      // looking only at our own target would call the conversation untouched.
+      const owned =
+        workspaceDir != null
+          ? ourRecords(workspaceDir, prior?.recordSessionIds ?? [], s.sessionId)
+          : { current: null, repointed: [] };
+      let continued =
         state === "modified" || state === "foreign"
           ? findContinuation(targetPath, prior?.importedAtMs)
           : null;
+      let continuedIn = targetPath;
+      for (const fork of owned.repointed) {
+        if (continued != null) break;
+        const forkPath = transcriptPathFor(claudeHome, fork.record.cwd, fork.record.cliSessionId);
+        continued = findContinuation(forkPath, prior?.importedAtMs);
+        if (continued != null) continuedIn = forkPath;
+      }
       if (continued != null) {
         conflicts += 1;
         skipped += 1;
@@ -385,7 +411,8 @@ function main(argv: string[]): number {
         process.stdout.write(
           `skip  ${s.sessionId}  (${continued.turns} message(s) sent in Claude after the import)\n` +
             `      first was ${when}: ${JSON.stringify(continued.firstText)}\n` +
-            `      re-importing would delete them. Move ${targetPath} aside first.\n`,
+            `      they are in ${continuedIn}\n` +
+            `      re-importing would leave them behind. Move that file aside first.\n`,
         );
         continue;
       }
@@ -420,17 +447,32 @@ function main(argv: string[]): number {
       }
       const res = writeTranscript(claudeHome, s, lines);
       history.records = history.records.filter((r) => r.importedSessionId !== s.sessionId);
-      history.records.push(makeHistoryRecord(s, sha, nowMs, res.sha256));
+      // The records written for this conversation stay known across runs, so a
+      // repointed one is recognisable later instead of looking like a stranger.
+      const recordSessionIds = [...(prior?.recordSessionIds ?? [])];
+      const historyRecord = makeHistoryRecord(s, sha, nowMs, res.sha256);
+      historyRecord.recordSessionIds = recordSessionIds;
+      history.records.push(historyRecord);
       imported += 1;
       process.stdout.write(
         `import ${res.lineCount} lines (${res.bytes}b) -> ${res.targetPath}\n`,
       );
 
+      for (const fork of owned.repointed) {
+        process.stdout.write(
+          `  note  ${fork.record.sessionId}.json is Claude's now (it points at ` +
+            `${fork.record.cliSessionId}); left alone\n`,
+        );
+      }
+
       if (workspaceDir != null && alreadyRegistered.has(s.sessionId) && force) {
         // Refresh the record we wrote earlier so remapped fields (title,
         // permission mode, effort, turn count) take effect.
-        const existing = findRecordFor(workspaceDir, s.sessionId);
+        const existing = owned.current ?? findRecordFor(workspaceDir, s.sessionId);
         if (existing) {
+          if (!recordSessionIds.includes(existing.record.sessionId)) {
+            recordSessionIds.push(existing.record.sessionId);
+          }
           refreshWrapperRecord(
             existing.path,
             existing.record,
@@ -461,6 +503,7 @@ function main(argv: string[]): number {
           reasoningEffort: s.reasoningEffort,
         });
         writeWrapperRecord(workspaceDir, record);
+        recordSessionIds.push(record.sessionId);
         alreadyRegistered.add(s.sessionId);
         registered += 1;
         process.stdout.write(`  registered -> ${record.sessionId}.json\n`);

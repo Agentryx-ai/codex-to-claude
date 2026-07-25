@@ -76,6 +76,19 @@ export function targetPathFor(
   return { projectDir, targetPath };
 }
 
+/**
+ * Where a session record's transcript lives. Same rule as `targetPathFor`, but
+ * driven by a record rather than a Codex session — needed to look inside a
+ * conversation Claude forked out of an import, which no Codex session names.
+ */
+export function transcriptPathFor(
+  claudeHome: string,
+  cwd: string,
+  cliSessionId: string,
+): string {
+  return path.join(claudeHome, "projects", encodeProjectDir(cwd), `${cliSessionId}.jsonl`);
+}
+
 /** Serialize transcript lines to newline-delimited JSON. */
 export function serializeLines(lines: ClaudeTranscriptLine[]): string {
   return lines.map((l) => JSON.stringify(l)).join("\n") + (lines.length ? "\n" : "");
