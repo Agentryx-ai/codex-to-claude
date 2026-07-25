@@ -30,6 +30,7 @@ import {
   resolveDesktopSessionsRoot,
   writeWrapperRecord,
 } from "./claude-desktop-target.ts";
+import { npmSwallowedFlags, npmSwallowedMessage } from "./npm-flags.ts";
 import { validateTranscript } from "./validate.ts";
 import { fixTranscriptFile } from "./fix.ts";
 import type { SessionFilter } from "./types.ts";
@@ -107,6 +108,12 @@ function fmtDate(ms: number | null): string {
 }
 
 function main(argv: string[]): number {
+  const swallowed = npmSwallowedFlags(argv);
+  if (swallowed.length > 0) {
+    process.stderr.write(npmSwallowedMessage(swallowed, argv));
+    return 2;
+  }
+
   const command = argv[0];
   if (!command || command === "-h" || command === "--help" || command === "help") {
     process.stdout.write(HELP);

@@ -9,6 +9,7 @@
   "scripts": {
     "list": "node --experimental-strip-types --experimental-sqlite src/cli.ts list",
     "import": "node --experimental-strip-types --experimental-sqlite src/cli.ts import",
+    "import:dry": "node --experimental-strip-types --experimental-sqlite src/cli.ts import --dry-run",
     "test": "node --experimental-strip-types --experimental-sqlite --test test/*.test.ts"
   },
   "engines": { "node": ">=22.6.0" },
