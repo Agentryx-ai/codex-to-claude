@@ -378,6 +378,29 @@ test("messages sent after an import are told apart from a history Claude replaye
   );
   assert.equal(findContinuation(p, importedAtMs), null, "only what the user typed counts");
 
+  // The shapes Claude Desktop actually writes as `user` without anyone typing:
+  // a tool result carried as text, its compaction notice, and a harness
+  // notification. None are marked isMeta, so each is known by its own field.
+  fs.appendFileSync(
+    p,
+    line({ type: "user", timestamp: "2026-07-25T10:13:00Z", toolUseResult: { ok: true }, message: { content: [{ type: "text", text: "[tool result toolu_01PWq]\n[object Object]" }] } }) +
+      line({ type: "user", timestamp: "2026-07-25T10:13:10Z", isCompactSummary: true, message: { content: "This session is being continued from a previous conversation" } }) +
+      line({ type: "user", timestamp: "2026-07-25T10:13:20Z", origin: { kind: "task-notification" }, message: { content: "<task-notification> <task-id>bf0nmoeso</task-id>" } }) +
+      line({ type: "user", timestamp: "2026-07-25T10:13:30Z", message: { content: "<local-command-stdout>Goal set: …</local-command-stdout>" } }),
+    "utf8",
+  );
+  assert.equal(findContinuation(p, importedAtMs), null, "what Claude injects is not yours");
+
+  // An explicitly human origin counts, and so does a line carrying no origin at
+  // all — older writes have none, so a human kind is not required.
+  const q = path.join(dir, "origins.jsonl");
+  fs.writeFileSync(
+    q,
+    line({ type: "user", timestamp: "2026-07-25T10:13:40Z", origin: { kind: "human" }, message: { content: "사람이 쓴 것" } }),
+    "utf8",
+  );
+  assert.equal(findContinuation(q, importedAtMs)?.firstText, "사람이 쓴 것");
+
   // The real thing.
   fs.appendFileSync(
     p,

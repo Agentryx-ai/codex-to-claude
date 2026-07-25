@@ -7,8 +7,12 @@
 //
 // Replayed turns keep their original Codex timestamps: a forked transcript
 // observed after a real continuation carried 2026-07-13/14 stamps for every
-// replayed turn and 2026-07-25 only for the new one. So a non-meta `user` line
-// stamped after the import is the user's own, and nothing else is.
+// replayed turn and 2026-07-25 only for the new one. So the import's own lines
+// are never mistaken for later ones.
+//
+// The timestamp alone is not enough, though. Claude writes tool results, its
+// compaction notice and harness notifications as `user` lines too, all stamped
+// after the import — see `isAuthored`.
 import fs from "node:fs";
 
 export interface Continuation {
@@ -41,18 +45,14 @@ export function findContinuation(
   let firstAtMs: number | null = null;
   for (const line of raw.split(/\r?\n/)) {
     if (line.trim() === "") continue;
-    let rec: {
-      type?: unknown;
-      isMeta?: unknown;
-      timestamp?: unknown;
-      message?: { content?: unknown };
-    };
+    let rec: AnyLine;
     try {
       rec = JSON.parse(line) as typeof rec;
     } catch {
       continue;
     }
     if (rec.type !== "user" || rec.isMeta === true) continue;
+    if (!isAuthored(rec)) continue;
     if (typeof rec.timestamp !== "string") continue;
     const at = Date.parse(rec.timestamp);
     // A second's slack: our own lines are stamped from Codex and are far older,
@@ -68,6 +68,43 @@ export function findContinuation(
     }
   }
   return turns > 0 ? { turns, firstText, firstAtMs } : null;
+}
+
+interface AnyLine {
+  type?: unknown;
+  isMeta?: unknown;
+  isCompactSummary?: unknown;
+  toolUseResult?: unknown;
+  origin?: unknown;
+  timestamp?: unknown;
+  message?: { content?: unknown };
+}
+
+/**
+ * Whether a `user` line is one somebody typed.
+ *
+ * Claude writes several kinds of `user` line that nobody authored, and does not
+ * mark them `isMeta` — that is this tool's own convention. Each carries a field
+ * that says what it is, observed on a transcript continued in Claude Desktop:
+ *
+ * - `toolUseResult` — a tool result. Its text reads `[tool result <id>]`, with
+ *   `[object Object]` under it, so there is nothing to match on in the text.
+ * - `isCompactSummary` — "This session is being continued from a previous
+ *   conversation…", written when Claude compacts.
+ * - `origin.kind` — `"human"` on a typed message, `"task-notification"` on the
+ *   ones the harness injects. Older lines carry no `origin` at all, so this
+ *   rejects a known non-human kind rather than requiring a human one.
+ * - `<local-command-stdout>` — what a slash command printed. The
+ *   `<command-name>` line next to it is the command the user ran, and counts.
+ */
+function isAuthored(rec: AnyLine): boolean {
+  if (rec.toolUseResult !== undefined) return false;
+  if (rec.isCompactSummary === true) return false;
+  const kind = (rec.origin as { kind?: unknown } | null | undefined)?.kind;
+  if (typeof kind === "string" && kind !== "human") return false;
+  const content = rec.message?.content;
+  if (typeof content === "string" && content.startsWith("<local-command-stdout>")) return false;
+  return true;
 }
 
 /** Text the user typed, from either shape Claude writes for a user message. */
