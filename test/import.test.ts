@@ -30,6 +30,7 @@ import {
   signedInWorkspaceDir,
   ourRecords,
   readRecord,
+  titleShowsCodexName,
 } from "../src/claude-desktop-target.ts";
 import { loadDesktopSelection, projectForCwd } from "../src/codex-desktop-state.ts";
 import { loadThreadNames, nameFromThreadRow } from "../src/codex-thread-names.ts";
@@ -551,4 +552,26 @@ test("records this tool wrote stay recognisable after Claude repoints them", () 
     transcriptPathFor("/claude", "/repo", "claude-fork-1"),
     path.join("/claude", "projects", "-repo", "claude-fork-1.jsonl"),
   );
+});
+
+test("a record already showing the Codex name is not re-synced from an older transcript", () => {
+  // Imports write the Codex name into customTitle, so a transcript written since
+  // then agrees with the record and nothing happens either way. The case that
+  // matters is an older transcript, whose customTitle is the first message: the
+  // record must keep the name rather than have the paragraph put back over it.
+  assert.equal(titleShowsCodexName("최신화하고 문서 읽기", "최신화하고 문서 읽기"), true);
+  assert.equal(titleShowsCodexName("[Codex] 최신화하고 문서 읽기", "최신화하고 문서 읽기"), true);
+
+  // The first message is not the name, so re-syncing it is the improvement the
+  // sync exists for.
+  assert.equal(
+    titleShowsCodexName("[Codex] <codex_delegation> <source_t", "최신화하고 문서 읽기"),
+    false,
+  );
+  assert.equal(titleShowsCodexName("git pull 해서 최신화하고 …", "최신화하고 문서 읽기"), false);
+
+  // A CLI conversation has no Codex name, and then the transcript is all there is.
+  assert.equal(titleShowsCodexName("anything", null), false);
+  assert.equal(titleShowsCodexName("anything", "   "), false);
+  assert.equal(titleShowsCodexName(undefined, "최신화하고 문서 읽기"), false);
 });

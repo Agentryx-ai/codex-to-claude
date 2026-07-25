@@ -208,6 +208,21 @@ export function readRecord(
   }
 }
 
+/**
+ * Whether a record already shows the name Codex shows, allowing for a
+ * `--title-prefix` in front of it. Such a title is correct however old the
+ * transcript is, and re-syncing it from one written before imports read Codex's
+ * names would put the first message back over the name.
+ */
+export function titleShowsCodexName(
+  recordTitle: unknown,
+  codexName: string | null | undefined,
+): boolean {
+  const name = codexName?.trim();
+  if (name == null || name === "") return false;
+  return typeof recordTitle === "string" && recordTitle.endsWith(name);
+}
+
 export interface OwnedRecords {
   /** A record we wrote that still points at the imported transcript. */
   current: { path: string; record: WrapperRecord } | null;
