@@ -377,16 +377,27 @@ export function mapSessionToClaudeLines(
 
   // Set a display title on the first line. Claude reads "customTitle" from the
   // file head with the highest priority, so this controls the sidebar label.
-  if (opts.titlePrefix != null && opts.titlePrefix !== "" && lines.length > 0) {
-    // Prefer the first message the human actually typed over Codex's injected
-    // preamble, so titles read like the conversation rather than like tooling.
+  //
+  // The name Codex shows wins when it has one: a conversation the user knows as
+  // "최신화하고 문서 읽기" should not arrive as the paragraph they opened with.
+  // Codex only names threads started from the app, so CLI imports still fall
+  // back to the first message the human typed — which is what Codex shows for
+  // them too. Codex's injected preamble is never a title in either case.
+  //
+  // A Codex name is worth a customTitle on its own, without --title-prefix;
+  // otherwise the name would be read off disk and then thrown away.
+  const codexName = session.codexName?.trim();
+  const prefix = opts.titlePrefix ?? "";
+  if (lines.length > 0 && (prefix !== "" || (codexName != null && codexName !== ""))) {
     const base =
-      firstRealUserText !== ""
-        ? firstRealUserText
-        : session.title && session.title !== ""
-          ? session.title
-          : "(untitled)";
-    lines[0].customTitle = (opts.titlePrefix + base).slice(0, 200);
+      codexName != null && codexName !== ""
+        ? codexName
+        : firstRealUserText !== ""
+          ? firstRealUserText
+          : session.title && session.title !== ""
+            ? session.title
+            : "(untitled)";
+    lines[0].customTitle = (prefix + base).slice(0, 200);
   }
 
   return lines;

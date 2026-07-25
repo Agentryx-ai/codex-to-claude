@@ -38,8 +38,22 @@ Calls and results are flat and paired by `call_id`, not nested.
 Not every rollout is a conversation in the sidebar. Sub-agent threads, `codex exec` automation runs and archived threads all live in the same directory. It resolves the list from Codex's own state, in this order:
 
 1. `~/.codex/.codex-global-state.json` — the sidebar's grouping, in one of two shapes. Older builds record `thread-project-assignments` (thread → project) plus `projectless-thread-ids`, which together *are* the membership. Current builds drop the assignment map: projects are registered under `local-projects` with `rootPaths`, and a thread belongs to whichever project's root contains its `cwd` (longest match), so membership comes from the index below and this file only supplies the names.
-2. `~/.codex/state_<n>.sqlite` — `threads` (`archived`, `rollout_path`, `title`, `cwd`, `source`, `recency_at_ms`) and `thread_spawn_edges` (parent → child). Used to drop archived and spawned threads, and to resolve each thread's rollout file.
+2. `~/.codex/state_<n>.sqlite` — `threads` (`archived`, `rollout_path`, `title`, `name`, `first_user_message`, `cwd`, `source`, `recency_at_ms`) and `thread_spawn_edges` (parent → child). Used to drop archived and spawned threads, and to resolve each thread's rollout file.
 3. Rollout-file scan, applying the equivalent rules from `session_meta` (`parent_thread_id`, `source`), when neither is available.
+
+### Conversation names
+
+The name Codex shows is not the first thing the user typed. Codex generates a short name for threads started from the app — `git pull 해서 최신화하고 tagless-p2p4-mac-hardware-handoff.md 읽으세요` becomes `최신화하고 문서 읽기` — and never names CLI threads, whose first message it shows instead.
+
+`~/.codex/session_index.jsonl` is where the names live, append-only, one line per naming:
+
+```jsonc
+{"id":"<threadId>","thread_name":"…","updated_at":"2026-07-13T14:10:51.946387Z"}
+```
+
+Renaming appends another line, so the newest `updated_at` wins. On the machine this was reconstructed from, 38 of 38 app-created threads had an entry and none of the 13 CLI/exec threads did.
+
+`threads.name` / `threads.title` is a weaker second source, used when there is no index file. `title` is seeded with `first_user_message` and replaced when Codex names the thread, so a `title` that differs from `first_user_message` is a generated name — but the DB lags renames (8 of 38 still carried the first message).
 
 ## Target — Claude Desktop
 

@@ -174,7 +174,10 @@ function main(argv: string[]): number {
             lastTsMs: s.lastTsMs,
             messageCount: s.messageCount,
             model: s.model,
-            title: s.title,
+            title: s.codexName || s.title,
+            // The first message, kept separate from the name Codex displays.
+            firstMessage: s.title,
+            codexName: s.codexName ?? null,
           })),
           null,
           2,
@@ -225,7 +228,7 @@ function main(argv: string[]): number {
       const proj = s.projectName ? `[${s.projectName}] ` : "";
       process.stdout.write(
         `${idx}. ${fmtDate(s.lastTsMs)}  ${kind}  ${msgs} msg  ${proj}${s.cwd || "(no cwd)"}\n` +
-          `     ${s.sessionId}  ${s.title || "(untitled)"}\n`,
+          `     ${s.sessionId}  ${s.codexName || s.title || "(untitled)"}\n`,
       );
     }
     return 0;
@@ -298,7 +301,7 @@ function main(argv: string[]): number {
               cliSessionId: s.sessionId,
               cwd: s.cwdOriginal || s.cwd,
               lines: catchUp,
-              title: catchUp[0]?.customTitle ?? s.title ?? "(untitled)",
+              title: catchUp[0]?.customTitle ?? s.codexName ?? s.title ?? "(untitled)",
               model: typeof values["model"] === "string" ? (values["model"] as string) : undefined,
               sandboxPolicy: s.sandboxPolicy,
               approvalMode: s.approvalMode,
@@ -402,7 +405,7 @@ function main(argv: string[]): number {
               cliSessionId: s.sessionId,
               cwd: s.cwdOriginal || s.cwd,
               lines,
-              title: lines[0]?.customTitle ?? s.title ?? "(untitled)",
+              title: lines[0]?.customTitle ?? s.codexName ?? s.title ?? "(untitled)",
               model: typeof values["model"] === "string" ? (values["model"] as string) : undefined,
               sandboxPolicy: s.sandboxPolicy,
               approvalMode: s.approvalMode,
@@ -418,7 +421,7 @@ function main(argv: string[]): number {
           cliSessionId: s.sessionId,
           cwd: s.cwdOriginal || s.cwd,
           lines,
-          title: lines[0]?.customTitle ?? s.title ?? "(untitled)",
+          title: lines[0]?.customTitle ?? s.codexName ?? s.title ?? "(untitled)",
           model: typeof values["model"] === "string" ? (values["model"] as string) : undefined,
           sandboxPolicy: s.sandboxPolicy,
           approvalMode: s.approvalMode,

@@ -29,6 +29,7 @@ import {
   signedInWorkspaceDir,
 } from "../src/claude-desktop-target.ts";
 import { loadDesktopSelection, projectForCwd } from "../src/codex-desktop-state.ts";
+import { loadThreadNames, nameFromThreadRow } from "../src/codex-thread-names.ts";
 import { encodeProjectDir } from "../src/paths.ts";
 import type { CodexSession } from "../src/types.ts";
 
@@ -359,4 +360,68 @@ test("an older Desktop state with an assignment map still drives selection direc
   assert.equal(sel.threadProject.get("t-2"), null);
   // Windows roots still match despite drive-letter case and separators
   assert.equal(projectForCwd(sel, "C:\\work\\repo")?.name, "eagle");
+});
+
+test("Codex's generated conversation name is read, newest entry winning", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "codex-names-"));
+  // Append-only: renaming a thread adds a line rather than rewriting one.
+  // CRLF because the file is read on Windows too.
+  const lines = [
+    { id: "t-1", thread_name: "MySQL 손상 진단 및 복구", updated_at: "2026-07-15T20:04:24.959164Z" },
+    { id: "t-1", thread_name: "MySQL 손상 복구 및 읽기 전용 데이터 회수", updated_at: "2026-07-15T20:05:42.216551Z" },
+    { id: "t-2", thread_name: "  최신화하고 문서 읽기  ", updated_at: "2026-07-13T14:10:51.946387Z" },
+    { id: "t-3", thread_name: "", updated_at: "2026-07-13T14:10:51.946387Z" },
+    "{ not json",
+    { thread_name: "no id", updated_at: "2026-07-13T14:10:51.946387Z" },
+  ].map((l) => (typeof l === "string" ? l : JSON.stringify(l)));
+  fs.writeFileSync(path.join(home, "session_index.jsonl"), lines.join("\r\n") + "\r\n");
+
+  const names = loadThreadNames(home);
+  assert.equal(names.get("t-1"), "MySQL 손상 복구 및 읽기 전용 데이터 회수", "the later rename wins");
+  assert.equal(names.get("t-2"), "최신화하고 문서 읽기");
+  assert.equal(names.has("t-3"), false, "an empty name is not a name");
+  assert.equal(names.size, 2, "malformed and id-less lines are skipped");
+
+  // An install with no index file simply has no names, rather than failing.
+  assert.equal(loadThreadNames(fs.mkdtempSync(path.join(os.tmpdir(), "codex-empty-"))).size, 0);
+});
+
+test("an out-of-order timestamp does not undo a later rename", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "codex-names-"));
+  fs.writeFileSync(
+    path.join(home, "session_index.jsonl"),
+    [
+      JSON.stringify({ id: "t", thread_name: "new", updated_at: "2026-07-15T20:05:42Z" }),
+      JSON.stringify({ id: "t", thread_name: "old", updated_at: "2026-07-15T20:04:24Z" }),
+    ].join("\n"),
+  );
+  assert.equal(loadThreadNames(home).get("t"), "new");
+});
+
+test("the thread index is a fallback name source, but only when it can be told apart", () => {
+  // `name` is authoritative.
+  assert.equal(nameFromThreadRow({ name: "생성된 이름", title: "무엇이든", firstUserMessage: "무엇이든" }), "생성된 이름");
+  // Codex seeds `title` with the first message; identical means it was never named.
+  assert.equal(nameFromThreadRow({ name: null, title: "git pull 해주세요", firstUserMessage: "git pull 해주세요" }), null);
+  // Diverging means Codex replaced it with a generated name.
+  assert.equal(nameFromThreadRow({ name: null, title: "최신화하고 문서 읽기", firstUserMessage: "git pull 해주세요" }), "최신화하고 문서 읽기");
+  assert.equal(nameFromThreadRow({ name: null, title: "", firstUserMessage: "" }), null);
+  assert.equal(nameFromThreadRow({}), null);
+});
+
+test("an imported conversation is titled the way Codex titles it", () => {
+  const named = fixtureSession();
+  named.codexName = "최신화하고 문서 읽기";
+  // Codex's name wins over the paragraph the conversation opened with.
+  assert.equal(
+    mapSessionToClaudeLines(named, { titlePrefix: "[Codex] " })[0].customTitle,
+    "[Codex] 최신화하고 문서 읽기",
+  );
+  // ...and is worth a title on its own, or reading it off disk was pointless.
+  assert.equal(mapSessionToClaudeLines(named)[0].customTitle, "최신화하고 문서 읽기");
+
+  // Codex never names CLI threads, and shows their first message instead.
+  const unnamed = fixtureSession();
+  assert.equal(mapSessionToClaudeLines(unnamed, { titlePrefix: "[Codex] " })[0].customTitle, "[Codex] hello codex");
+  assert.equal(mapSessionToClaudeLines(unnamed)[0].customTitle, undefined);
 });

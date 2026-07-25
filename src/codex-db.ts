@@ -13,6 +13,10 @@ export interface DbThreadRow {
   rolloutPath: string;
   cwd: string;
   title: string;
+  /** Codex's generated conversation name, when the DB carries one. */
+  name: string | null;
+  /** The first message the user sent, as Codex recorded it. */
+  firstUserMessage: string | null;
   source: string;
   updatedAtMs: number | null;
   sandboxPolicy: string | null;
@@ -78,6 +82,7 @@ export function loadDesktopThreads(
     const sql =
       `SELECT id, rollout_path AS rolloutPath, cwd, ` +
       `COALESCE(title, name, first_user_message, '') AS title, ` +
+      `name, first_user_message AS firstUserMessage, ` +
       `source, ` +
       `COALESCE(recency_at_ms, updated_at_ms, updated_at) AS updatedAtMs, ` +
       `sandbox_policy AS sandboxPolicy, approval_mode AS approvalMode, ` +
@@ -91,6 +96,8 @@ export function loadDesktopThreads(
       rolloutPath: String(r.rolloutPath ?? ""),
       cwd: String(r.cwd ?? ""),
       title: String(r.title ?? ""),
+      name: r.name != null ? String(r.name) : null,
+      firstUserMessage: r.firstUserMessage != null ? String(r.firstUserMessage) : null,
       source: String(r.source ?? ""),
       updatedAtMs: r.updatedAtMs != null ? Number(r.updatedAtMs) : null,
       sandboxPolicy: r.sandboxPolicy != null ? String(r.sandboxPolicy) : null,
@@ -129,6 +136,7 @@ export function loadThreadsByIds(
     const sql =
       `SELECT id, rollout_path AS rolloutPath, cwd, ` +
       `COALESCE(title, name, first_user_message, '') AS title, source, ` +
+      `name, first_user_message AS firstUserMessage, ` +
       `COALESCE(recency_at_ms, updated_at_ms, updated_at) AS updatedAtMs, ` +
       `sandbox_policy AS sandboxPolicy, approval_mode AS approvalMode, ` +
       `reasoning_effort AS reasoningEffort, archived AS archived ` +
@@ -139,6 +147,8 @@ export function loadThreadsByIds(
       rolloutPath: String(r.rolloutPath ?? ""),
       cwd: String(r.cwd ?? ""),
       title: String(r.title ?? ""),
+      name: r.name != null ? String(r.name) : null,
+      firstUserMessage: r.firstUserMessage != null ? String(r.firstUserMessage) : null,
       source: String(r.source ?? ""),
       updatedAtMs: r.updatedAtMs != null ? Number(r.updatedAtMs) : null,
       sandboxPolicy: r.sandboxPolicy != null ? String(r.sandboxPolicy) : null,
