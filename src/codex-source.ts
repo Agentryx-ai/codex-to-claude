@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { CodexSession, RolloutLine, SessionMeta } from "./types.ts";
 import { normalizeCwd } from "./paths.ts";
-import { loadDesktopThreads, loadThreadsByIds } from "./codex-db.ts";
+import { loadDesktopThreads } from "./codex-db.ts";
 import { loadDesktopSelection, projectForCwd } from "./codex-desktop-state.ts";
 import { loadThreadNames, nameFromThreadRow } from "./codex-thread-names.ts";
 import { splitUserMessage } from "./preamble.ts";
@@ -285,19 +285,34 @@ export function loadDesktopSessions(
   }
 
   if (selection && selection.mode === "assigned") {
-    const ids = [...selection.threadProject.keys()];
-    const rows = loadThreadsByIds(codexHome, ids, opts);
+    // Current Desktop state can be hybrid: it retains explicit assignments for
+    // some threads while newer threads are grouped only by their cwd. Treat an
+    // explicit assignment as an override, then derive every unassigned row from
+    // the registered project roots. Reading only the assignment keys silently
+    // drops otherwise active project conversations.
+    const rows = loadDesktopThreads(codexHome, opts);
     if (rows) {
       const sessions: CodexSession[] = [];
       for (const r of rows) {
         if (!r.rolloutPath) continue;
         if (opts.interactiveOnly && r.source.includes("exec")) continue;
+        // Unassigned CLI/exec rows are background or terminal runs, not the
+        // Desktop project conversations this hybrid recovery is for. Desktop
+        // conversations are recorded as `vscode`; explicit assignments remain
+        // authoritative regardless of source for older state files.
+        if (!selection.threadProject.has(r.id) && r.source !== "vscode") continue;
         const s = parseRollout(r.rolloutPath, opts);
         if (!s) continue;
         if (s.title === "" && r.title) s.title = r.title.replace(/\s+/g, " ").slice(0, 100);
-        s.codexName = nameFor(r);
+        const indexedName = nameFor(r);
+        const desktopFallback = r.firstUserMessage?.replace(/\s+/g, " ").trim();
+        s.codexName =
+          indexedName ??
+          (desktopFallback && desktopFallback !== "" ? desktopFallback.slice(0, 100) : null);
         if (r.source) s.source = r.source;
-        const proj = selection.threadProject.get(r.id) ?? null;
+        const proj = selection.threadProject.has(r.id)
+          ? selection.threadProject.get(r.id) ?? null
+          : projectForCwd(selection, r.cwd || s.cwdOriginal || s.cwd);
         s.projectName = proj?.name ?? "(no project)";
         s.hasProject = proj != null;
         s.isArchived = r.archived;
