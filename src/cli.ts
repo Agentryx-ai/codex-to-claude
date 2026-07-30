@@ -1,7 +1,7 @@
 #!/usr/bin/env -S node --experimental-strip-types --experimental-sqlite
 import fs from "node:fs";
 import { parseArgs } from "node:util";
-import { resolveCodexHome, resolveClaudeHome } from "./paths.ts";
+import { canonicalCwd, resolveCodexHome, resolveClaudeHome } from "./paths.ts";
 import { loadDesktopSessions } from "./codex-source.ts";
 import { sourceKind } from "./codex-db.ts";
 import { applyFilter } from "./filter.ts";
@@ -310,7 +310,7 @@ function main(argv: string[]): number {
           if (catchUp.length > 0) {
             const record = buildWrapperRecord({
               cliSessionId: s.sessionId,
-              cwd: s.cwdOriginal || s.cwd,
+              cwd: canonicalCwd(s.cwdOriginal || s.cwd),
               lines: catchUp,
               title: catchUp[0]?.customTitle ?? s.codexName ?? s.title ?? "(untitled)",
               model: typeof values["model"] === "string" ? (values["model"] as string) : undefined,
@@ -479,7 +479,7 @@ function main(argv: string[]): number {
             existing.record,
             buildWrapperRecord({
               cliSessionId: s.sessionId,
-              cwd: s.cwdOriginal || s.cwd,
+              cwd: canonicalCwd(s.cwdOriginal || s.cwd),
               lines,
               title: lines[0]?.customTitle ?? s.codexName ?? s.title ?? "(untitled)",
               model: typeof values["model"] === "string" ? (values["model"] as string) : undefined,
@@ -495,7 +495,7 @@ function main(argv: string[]): number {
       } else if (workspaceDir != null && !alreadyRegistered.has(s.sessionId)) {
         const record = buildWrapperRecord({
           cliSessionId: s.sessionId,
-          cwd: s.cwdOriginal || s.cwd,
+          cwd: canonicalCwd(s.cwdOriginal || s.cwd),
           lines,
           title: lines[0]?.customTitle ?? s.codexName ?? s.title ?? "(untitled)",
           model: typeof values["model"] === "string" ? (values["model"] as string) : undefined,

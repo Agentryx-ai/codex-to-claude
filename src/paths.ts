@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -27,6 +28,30 @@ export function resolveClaudeHome(override?: string): string {
 export function normalizeCwd(cwd: string): string {
   if (/^[A-Za-z]:/.test(cwd)) return cwd[0].toLowerCase() + cwd.slice(1);
   return cwd;
+}
+
+/**
+ * The spelling of a cwd to put in a Claude Desktop session record.
+ *
+ * Desktop groups the conversation list by that string as written, so two
+ * spellings of one directory show up as two projects. Codex keeps whatever case
+ * the session was started with — `C:\...\Riddlemesh` in one thread and
+ * `c:\...\Riddlemesh` in the next — which split one project in half. Ask the
+ * filesystem for the canonical spelling, which is what Claude's own records use.
+ *
+ * A symlinked root would resolve to a different directory rather than a
+ * different casing, so that result is discarded: only the casing is adopted.
+ */
+export function canonicalCwd(cwd: string): string {
+  if (cwd === "") return cwd;
+  const uppercaseDrive = /^[a-z]:/.test(cwd) ? cwd[0].toUpperCase() + cwd.slice(1) : cwd;
+  let real: string;
+  try {
+    real = fs.realpathSync.native(cwd);
+  } catch {
+    return uppercaseDrive;
+  }
+  return real.toLowerCase() === uppercaseDrive.toLowerCase() ? real : uppercaseDrive;
 }
 
 /**
