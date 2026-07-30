@@ -4,6 +4,7 @@ import type {
   ClaudeTranscriptLine,
   CodexSession,
 } from "./types.ts";
+import { canonicalCwd } from "./paths.ts";
 import { splitUserMessage } from "./preamble.ts";
 import { splitCitations } from "./citation.ts";
 import { applyBudget, repairTranscript } from "./repair.ts";
@@ -135,6 +136,11 @@ export function mapSessionToClaudeLines(
   const maxToolChars = opts.maxToolChars ?? DEFAULT_MAX_TOOL_CHARS;
   const gitBranch = session.meta.git?.branch;
   const model = session.model ?? undefined;
+  // Claude reads this back when a conversation is opened and writes it into the
+  // session record, which is what its list groups by — so a transcript spelling
+  // the directory differently from Claude's own sessions splits the project in
+  // two. Claude writes the canonical path here; match it.
+  const cwd = canonicalCwd(session.cwdOriginal || session.cwd);
 
   let lines: ClaudeTranscriptLine[] = [];
   let parentUuid: string | null = null;
@@ -160,7 +166,7 @@ export function mapSessionToClaudeLines(
       parentUuid,
       isSidechain: false,
       userType: "external",
-      cwd: session.cwd,
+      cwd,
       sessionId: session.sessionId,
       version,
       type,
@@ -248,7 +254,7 @@ export function mapSessionToClaudeLines(
         parentUuid,
         isSidechain: false,
         userType: "external",
-        cwd: session.cwd,
+        cwd,
         sessionId: session.sessionId,
         version,
         type: "system",

@@ -37,7 +37,7 @@ import { loadDesktopSelection, projectForCwd } from "../src/codex-desktop-state.
 import { loadThreadNames, nameFromThreadRow } from "../src/codex-thread-names.ts";
 import { renderCitation, splitCitations } from "../src/citation.ts";
 import { validateTranscript } from "../src/validate.ts";
-import { encodeProjectDir } from "../src/paths.ts";
+import { canonicalCwd, encodeProjectDir } from "../src/paths.ts";
 import type { CodexSession } from "../src/types.ts";
 
 const SID = "11111111-1111-4111-8111-111111111111";
@@ -186,6 +186,27 @@ test("Windows drive letter is lowercased to match Claude Code folders", () => {
   // same folder Claude Code created from "c:\\_projects\\Agentryx-ai".
   assert.equal(encodeProjectDir("C:\\_projects\\Agentryx-ai"), "c---projects-Agentryx-ai");
   assert.equal(encodeProjectDir("c:\\_projects\\Agentryx-ai"), "c---projects-Agentryx-ai");
+});
+
+test("one directory gets one record cwd, whatever case Codex recorded", () => {
+  // Codex keeps the case each session was started with, and Claude Desktop
+  // groups its list by that string as written — two spellings split a project.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-cwd-"));
+  const real = fs.realpathSync.native(dir);
+  assert.equal(canonicalCwd(real), real, "a canonical path is left as it is");
+
+  // Only Windows spells one directory two ways. Elsewhere a differently-cased
+  // path is a different directory, and re-casing it would be the bug.
+  if (process.platform === "win32") {
+    const flipped = real[0].toLowerCase() + real.slice(1);
+    assert.equal(canonicalCwd(flipped), real, "one spelling for one directory");
+    assert.match(canonicalCwd(flipped), /^[A-Z]:/);
+  }
+
+  // A directory that no longer exists still gets a single stable spelling.
+  const gone = path.join(real, "deleted-project");
+  assert.equal(canonicalCwd(gone), canonicalCwd(gone));
+  assert.equal(canonicalCwd(""), "");
 });
 
 test("end-to-end import writes a resumable transcript and dedups on re-run", () => {
