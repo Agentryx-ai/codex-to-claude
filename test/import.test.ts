@@ -509,6 +509,13 @@ test("an imported conversation is titled the way Codex titles it", () => {
   const unnamed = fixtureSession();
   assert.equal(mapSessionToClaudeLines(unnamed, { titlePrefix: "[Codex] " })[0].customTitle, "[Codex] hello codex");
   assert.equal(mapSessionToClaudeLines(unnamed)[0].customTitle, undefined);
+
+  named.codexName = "[Codex] 이미 옮긴 이름";
+  assert.equal(
+    mapSessionToClaudeLines(named, { titlePrefix: "[Codex] " })[0].customTitle,
+    "[Codex] 이미 옮긴 이름",
+    "the requested prefix is idempotent",
+  );
 });
 
 test("Codex memory citations leave the reply and become metadata", () => {
