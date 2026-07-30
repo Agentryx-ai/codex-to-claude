@@ -84,6 +84,17 @@ test("a tool_result with no matching call is demoted to text", () => {
   assert.ok(!flat.includes("tool_result"), "no dangling tool_result remains");
 });
 
+test("a tool_result that precedes its matching call is demoted to text", () => {
+  const lines = mapSessionToClaudeLines(session([
+    user("go"),
+    { tsMs: 2, payload: { type: "function_call_output", call_id: "late", output: "early result" } },
+    { tsMs: 3, payload: { type: "function_call", name: "shell", arguments: "{}", call_id: "late" } },
+  ]));
+  assert.deepEqual(validateTranscript(lines), []);
+  assert.match(JSON.stringify(lines[1].message.content), /early result/);
+  assert.ok(!JSON.stringify(lines[1].message.content).includes("tool_result"));
+});
+
 test("validateTranscript detects a non-object tool_use input", () => {
   const bad = mapSessionToClaudeLines(session([user("hi")]));
   (bad[0].message.content as any) = [{ type: "tool_use", id: "x", name: "n", input: "oops" }];
