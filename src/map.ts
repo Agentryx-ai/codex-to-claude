@@ -384,7 +384,9 @@ export function mapSessionToClaudeLines(
 
   // Make the result replayable before anything reads lines[0].
   lines = repairTranscript(lines);
-  lines = applyBudget(lines, opts.maxChars).lines;
+  // Budgeting can cut between a tool call and its result. Repair once more at
+  // the final boundary so a kept result cannot point at an omitted call.
+  lines = repairTranscript(applyBudget(lines, opts.maxChars).lines);
 
   // Set a display title on the first line. Claude reads "customTitle" from the
   // file head with the highest priority, so this controls the sidebar label.
