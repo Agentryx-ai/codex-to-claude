@@ -416,7 +416,10 @@ export function mapSessionToClaudeLines(
           : session.title && session.title !== ""
             ? session.title
             : "(untitled)";
-    lines[0].customTitle = (prefix + base).slice(0, 200);
+    lines[0].customTitle = (prefix !== "" && base.startsWith(prefix) ? base : prefix + base).slice(
+      0,
+      200,
+    );
   }
 
   return lines;
