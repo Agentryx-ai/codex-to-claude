@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 
 import {
   parseRollout,
@@ -366,6 +367,63 @@ test("an older Desktop state with an assignment map still drives selection direc
   assert.equal(sel.threadProject.get("t-2"), null);
   // Windows roots still match despite drive-letter case and separators
   assert.equal(projectForCwd(sel, "C:\\work\\repo")?.name, "eagle");
+});
+
+test("hybrid Desktop state recovers unassigned app conversations by cwd", () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "codex-hybrid-"));
+  const root = path.join(home, "project");
+  fs.mkdirSync(root);
+  fs.writeFileSync(
+    path.join(home, ".codex-global-state.json"),
+    JSON.stringify({
+      "local-projects": { p1: { id: "p1", name: "hybrid", rootPaths: [root] } },
+      "thread-project-assignments": {
+        "11111111-1111-4111-8111-111111111111": { projectId: "p1" },
+      },
+    }),
+  );
+
+  const rollout = (id: string, text: string): string => {
+    const p = path.join(home, `rollout-${id}.jsonl`);
+    fs.writeFileSync(
+      p,
+      [
+        { timestamp: "2026-07-24T00:00:00Z", type: "session_meta", payload: { id, cwd: root } },
+        {
+          timestamp: "2026-07-24T00:00:01Z",
+          type: "response_item",
+          payload: { type: "message", role: "user", content: [{ type: "input_text", text }] },
+        },
+      ].map((x) => JSON.stringify(x)).join("\n") + "\n",
+    );
+    return p;
+  };
+  const assigned = "11111111-1111-4111-8111-111111111111";
+  const recovered = "22222222-2222-4222-8222-222222222222";
+  const background = "33333333-3333-4333-8333-333333333333";
+  const db = new DatabaseSync(path.join(home, "state_5.sqlite"));
+  db.exec(
+    "CREATE TABLE threads (id TEXT, rollout_path TEXT, cwd TEXT, title TEXT, name TEXT, " +
+      "first_user_message TEXT, source TEXT, recency_at_ms INTEGER, updated_at_ms INTEGER, " +
+      "updated_at INTEGER, sandbox_policy TEXT, approval_mode TEXT, reasoning_effort TEXT, archived INTEGER);" +
+      "CREATE TABLE thread_spawn_edges (child_thread_id TEXT);",
+  );
+  const insert = db.prepare(
+    "INSERT INTO threads VALUES (?, ?, ?, ?, NULL, ?, ?, ?, NULL, NULL, NULL, NULL, NULL, 0)",
+  );
+  insert.run(assigned, rollout(assigned, "assigned"), root, "assigned", "assigned", "vscode", 3);
+  insert.run(recovered, rollout(recovered, "recovered"), root, "recovered", "recovered", "vscode", 2);
+  insert.run(background, rollout(background, "background"), root, "background", "background", "exec", 1);
+  db.close();
+
+  const result = loadDesktopSessions(home);
+  assert.equal(result.via, "desktop");
+  assert.deepEqual(
+    result.sessions.map((s) => s.sessionId),
+    [assigned, recovered],
+    "unassigned Desktop rows are recovered while background exec rows stay out",
+  );
+  assert.ok(result.sessions.every((s) => s.projectName === "hybrid" && s.hasProject === true));
 });
 
 test("Codex's generated conversation name is read, newest entry winning", () => {
